@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import ScorePills from './ScorePills';
 import IndexingCard from './IndexingCard';
-import PsiCard from './PsiCard'; // remove this + the tab below if you don't want PSI yet
+import LinkCheckerCard from './LinkCheckerCard'; // remove if you didn't add it
+import PsiCard from './PsiCard'; // remove this + tab below if you don't want PSI yet
 
 export default function ResultCard({ data }:{ data:any }){
   const [tab, setTab] = useState<string>('overview');
@@ -23,20 +24,16 @@ export default function ResultCard({ data }:{ data:any }){
   ];
 
   const TabNav = () => (
-    <div className="border-b border-gray-200 -mb-px">
-      <nav className="-mb-px flex flex-wrap gap-4">
-        {tabs.map(t => (
-          <button
-            key={t.key}
-            onClick={()=>setTab(t.key)}
-            className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${
-              tab===t.key ? 'border-black text-black' : 'border-transparent text-gray-500 hover:text-black'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+    <div className="tablist">
+      {tabs.map(t => (
+        <button
+          key={t.key}
+          onClick={()=>setTab(t.key)}
+          className={`tab ${tab===t.key ? 'tab-active' : ''}`}
+        >
+          {t.label}
+        </button>
+      ))}
     </div>
   );
 
@@ -62,17 +59,43 @@ export default function ResultCard({ data }:{ data:any }){
             <section>
               <h3 className="font-semibold mb-3">Basics</h3>
               <div className="kv">
-                <div className="k">Title</div><div className="v">{data.title || <i>—</i>}</div>
-                <div className="k">Description</div><div className="v">{data.metaDescription || <i>—</i>}</div>
-                <div className="k">Canonical</div><div className="v">
+                <div className="k">Title</div>
+                <div className="v">{data.title || <i>—</i>}</div>
+
+                <div className="k">Description</div>
+                <div className="v">{data.metaDescription || <i>—</i>}</div>
+
+                <div className="k">Canonical</div>
+                <div className="v">
                   {data.canonical || <i>—</i>}
                   {data.canonicalStatus && <span className="badge ml-2">{data.canonicalStatus}</span>}
                 </div>
-                <div className="k">Robots</div><div className="v">{data.robots || <i>—</i>}</div>
-                <div className="k">Viewport</div><div className="v">{data.viewport || <i>—</i>}</div>
-                <div className="k">Lang</div><div className="v">{data.lang || <i>—</i>}</div>
-                <div className="k">H1 Count</div><div className="v">{data.h1Count}</div>
-                <div className="k">Hreflang</div><div className="v">{(data.hreflang||[]).join(', ') || <i>—</i>}</div>
+
+                <div className="k">HTTP Status</div>
+                <div className="v">{data.http?.status ?? '—'}</div>
+
+                <div className="k">X-Robots-Tag</div>
+                <div className="v">{data.http?.xRobotsTag || <i>—</i>}</div>
+
+                <div className="k">Robots</div>
+                <div className="v">
+                  {data.robotsMeta
+                    ? `${data.robotsMeta.index ? 'index' : 'noindex'}, ${data.robotsMeta.follow ? 'follow' : 'nofollow'}${data.robotsMeta.raw ? ` (${data.robotsMeta.raw})` : ''}`
+                    : (data.robots || <i>—</i>)
+                  }
+                </div>
+
+                <div className="k">Viewport</div>
+                <div className="v">{data.viewport || <i>—</i>}</div>
+
+                <div className="k">Lang</div>
+                <div className="v">{data.lang || <i>—</i>}</div>
+
+                <div className="k">Headings</div>
+                <div className="v">H1 {data.h1Count ?? 0} · H2 {data.headings?.h2 ?? 0} · H3 {data.headings?.h3 ?? 0}</div>
+
+                <div className="k">Hreflang</div>
+                <div className="v">{(data.hreflang||[]).join(', ') || <i>—</i>}</div>
               </div>
             </section>
 
@@ -128,15 +151,22 @@ export default function ResultCard({ data }:{ data:any }){
 
       {/* LINKS */}
       {tab==='links' && (
-        <section>
-          <h3 className="font-semibold mb-3">Links</h3>
-          <div className="kv">
-            <div className="k">Total</div><div className="v">{Links.total ?? 0}</div>
-            <div className="k">Internal</div><div className="v">{Links.internal ?? 0}</div>
-            <div className="k">External</div><div className="v">{Links.external ?? 0}</div>
-            <div className="k">Nofollow</div><div className="v">{Links.nofollow ?? 0}</div>
-          </div>
-        </section>
+        <>
+          <section>
+            <h3 className="font-semibold mb-3">Links</h3>
+            <div className="kv">
+              <div className="k">Total</div><div className="v">{Links.total ?? 0}</div>
+              <div className="k">Internal</div><div className="v">{Links.internal ?? 0}</div>
+              <div className="k">External</div><div className="v">{Links.external ?? 0}</div>
+              <div className="k">Nofollow</div><div className="v">{Links.nofollow ?? 0}</div>
+            </div>
+          </section>
+
+          {/* Optional full table via LinkChecker */}
+          {data.finalUrl || data.url ? (
+            <LinkCheckerCard url={data.finalUrl || data.url} />
+          ) : null}
+        </>
       )}
 
       {/* STRUCTURED DATA */}
@@ -157,7 +187,13 @@ export default function ResultCard({ data }:{ data:any }){
             <div className="kv">
               <div className="k">Viewport</div><div className="v">{data.viewport || <i>—</i>}</div>
               <div className="k">Lang</div><div className="v">{data.lang || <i>—</i>}</div>
-              <div className="k">Robots</div><div className="v">{data.robots || <i>—</i>}</div>
+              <div className="k">Robots</div>
+              <div className="v">
+                {data.robotsMeta
+                  ? `${data.robotsMeta.index ? 'index' : 'noindex'}, ${data.robotsMeta.follow ? 'follow' : 'nofollow'}`
+                  : (data.robots || <i>—</i>)
+                }
+              </div>
             </div>
           </section>
           {(data._issues?.length || data._warnings?.length) ? (
