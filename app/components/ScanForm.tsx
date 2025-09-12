@@ -1,33 +1,24 @@
 'use client';
-import React, { useState } from 'react';
+import React from 'react';
 
-export default function ScanForm({ onResult }:{ onResult: (res:any)=>void }){
-  const [url, setUrl] = useState('https://www.timesprime.com/');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string|null>(null);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true); setError(null);
-    try {
-      const r = await fetch('/api/scan', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ url })});
-      const j = await r.json();
-      if(!j.ok){ setError(j.error || 'Scan failed'); }
-      else onResult(j.data);
-    } catch (err:any){
-      setError(String(err.message || err));
-    } finally { setLoading(false); }
-  }
-
+export default function ScanForm({ url, setUrl, onSubmit }:{
+  url: string; setUrl: (v:string)=>void; onSubmit: (e:React.FormEvent)=>void;
+}) {
   return (
-    <form onSubmit={submit} className="card p-5 space-y-3">
-      <div className="label">URL to scan</div>
+    <form onSubmit={onSubmit} className="card p-5 space-y-3">
+      <label className="text-sm text-[rgb(var(--muted))]">URL to scan</label>
       <div className="flex gap-2">
-        <input className="input" value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://example.com" />
-        <button className="btn" disabled={loading}>{loading ? 'Scanning...' : 'Scan'}</button>
+        <input
+          className="input"
+          placeholder="https://example.com/page"
+          value={url}
+          onChange={e=>setUrl(e.target.value)}
+        />
+        <button className="btn" type="submit">Scan</button>
       </div>
-      {error && <div className="text-red-600 text-sm">{error}</div>}
-      <div className="text-xs text-gray-500">Tip: works best on publicly accessible pages. For JS-heavy sites, enable the dynamic render mode in the code.</div>
+      <p className="text-xs text-[rgb(var(--muted))]">
+        Tip: works best on publicly accessible pages. For JS-heavy sites, enable the dynamic render mode in code.
+      </p>
     </form>
-  )
+  );
 }
