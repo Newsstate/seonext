@@ -2,20 +2,70 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --bg: 245 245 250;
-  --card: 255 255 255;
+/* Base theme */
+@layer base {
+  :root {
+    --ring: 24 24 27; /* neutral-900 */
+  }
+  html { @apply bg-neutral-50 text-neutral-900 antialiased; }
+  html.dark { @apply bg-neutral-950 text-neutral-50; }
 }
 
-html, body { height: 100%; }
-body { background: rgb(var(--bg)); color: #0b0b0f; }
-.container { max-width: 1100px; margin: 0 auto; padding: 24px; }
-.card { background: rgb(var(--card)); border-radius: 16px; box-shadow: 0 8px 28px rgba(0,0,0,.06); }
-.label { @apply text-sm text-gray-600; }
-.input { @apply w-full rounded-xl border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black/10; }
-.btn { @apply inline-flex items-center justify-center rounded-xl border border-black bg-black px-4 py-2 font-medium text-white hover:opacity-90 disabled:opacity-60; }
-.badge { @apply inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700; }
-.kv { @apply grid grid-cols-3 gap-x-4 gap-y-2 text-sm; }
-.kv .k { @apply text-gray-500; }
-.kv .v { @apply col-span-2; }
-pre.code { @apply whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-xs leading-relaxed; }
+/* Pro UI primitives */
+@layer components {
+  .container-pro { @apply max-w-6xl mx-auto px-4 md:px-6; }
+
+  .card {
+    @apply rounded-2xl border border-neutral-200/70 bg-white/70 backdrop-blur-sm
+           shadow-sm hover:shadow-md transition-shadow
+           dark:bg-neutral-900/60 dark:border-neutral-800;
+  }
+
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+           bg-neutral-900 text-white hover:bg-neutral-800 active:scale-[.98] transition
+           focus:outline-none focus:ring-2 focus:ring-neutral-900/20
+           dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium
+           border border-neutral-200 hover:bg-neutral-100
+           dark:border-neutral-800 dark:hover:bg-neutral-800;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm
+           focus:outline-none focus:ring-2 focus:ring-neutral-900/20 focus:border-neutral-900/30
+           dark:bg-neutral-900 dark:border-neutral-700;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full border border-neutral-200 bg-white
+           px-2.5 py-1 text-xs text-neutral-700
+           dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-200;
+  }
+
+  .kv { @apply grid grid-cols-[160px_1fr] gap-y-1.5 text-sm; }
+  .k  { @apply text-neutral-500; }
+  .v  { @apply font-medium break-words; }
+
+  .code { @apply rounded-xl bg-neutral-950 text-neutral-100 p-4 text-xs overflow-x-auto dark:bg-neutral-900; }
+
+  .tablist {
+    @apply flex gap-1 p-1 rounded-xl bg-neutral-100 border border-neutral-200
+           dark:bg-neutral-900 dark:border-neutral-800;
+  }
+  .tab      { @apply px-3 py-1.5 text-sm rounded-lg text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white transition; }
+  .tab-active { @apply bg-white text-neutral-900 shadow-sm dark:bg-neutral-800; }
+
+  .table-pro { @apply min-w-full text-sm; }
+  .th-pro    { @apply text-left text-neutral-600 dark:text-neutral-300 py-2 pr-4; }
+  .td-pro    { @apply py-1.5 pr-4 align-top; }
+}
+
+/* Subtle selection & scrollbar polish */
+::selection { background: #111827; color: white; } /* neutral-900 */
+::-webkit-scrollbar { height: 8px; width: 8px; }
+::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 9999px; }
+html.dark ::-webkit-scrollbar-thumb { background: #3f3f46; }
