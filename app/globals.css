@@ -2,70 +2,85 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Base theme */
+/* ---------- Theme tokens ---------- */
 @layer base {
   :root {
-    --ring: 24 24 27; /* neutral-900 */
+    --bg: 247 247 248;         /* neutral-50 */
+    --panel: 255 255 255;      /* white */
+    --text: 17 24 39;          /* neutral-900 */
+    --muted: 107 114 128;      /* neutral-500 */
+    --border: 228 228 231;     /* zinc-200 */
+    --brand: 99 102 241;       /* indigo-500 */
+    --ring: 79 70 229;         /* indigo-600 */
+    --code: 9 9 11;            /* neutral-950 */
   }
-  html { @apply bg-neutral-50 text-neutral-900 antialiased; }
-  html.dark { @apply bg-neutral-950 text-neutral-50; }
+  .dark {
+    --bg: 10 10 11;            /* neutral-950 */
+    --panel: 20 20 23;         /* neutral-900 */
+    --text: 250 250 250;       /* neutral-50 */
+    --muted: 161 161 170;      /* zinc-400 */
+    --border: 39 39 42;        /* zinc-800 */
+    --brand: 129 140 248;      /* indigo-400 */
+    --ring: 165 180 252;       /* indigo-300 */
+    --code: 24 24 27;          /* neutral-900 */
+  }
+
+  html { @apply antialiased; background-color: rgb(var(--bg)); color: rgb(var(--text)); }
 }
 
-/* Pro UI primitives */
+/* ---------- Pro UI primitives ---------- */
 @layer components {
   .container-pro { @apply max-w-6xl mx-auto px-4 md:px-6; }
 
   .card {
-    @apply rounded-2xl border border-neutral-200/70 bg-white/70 backdrop-blur-sm
-           shadow-sm hover:shadow-md transition-shadow
-           dark:bg-neutral-900/60 dark:border-neutral-800;
+    background: linear-gradient(0deg, rgba(255,255,255,.7), rgba(255,255,255,.7)) padding-box,
+                linear-gradient(180deg, rgba(var(--border), .8), rgba(var(--border), .2)) border-box;
+    @apply rounded-2xl border bg-white/70 shadow-sm dark:bg-[rgb(var(--panel))]/80;
   }
 
   .btn {
     @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
-           bg-neutral-900 text-white hover:bg-neutral-800 active:scale-[.98] transition
-           focus:outline-none focus:ring-2 focus:ring-neutral-900/20
-           dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200;
+           bg-[rgb(var(--brand))] text-white hover:opacity-95 active:scale-[.98]
+           focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ring))]/30 transition;
   }
-
   .btn-ghost {
     @apply inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium
-           border border-neutral-200 hover:bg-neutral-100
-           dark:border-neutral-800 dark:hover:bg-neutral-800;
+           border border-[rgb(var(--border))] text-[rgb(var(--text))]
+           hover:bg-black/5 dark:hover:bg-white/5 transition;
   }
 
   .input {
-    @apply w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm
-           focus:outline-none focus:ring-2 focus:ring-neutral-900/20 focus:border-neutral-900/30
-           dark:bg-neutral-900 dark:border-neutral-700;
+    @apply w-full rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel))]
+           px-3.5 py-2.5 text-sm shadow-sm placeholder:text-[rgb(var(--muted))]
+           focus:outline-none focus:ring-2 focus:ring-[rgb(var(--ring))]/30 focus:border-[rgb(var(--ring))]/40;
   }
 
   .badge {
-    @apply inline-flex items-center rounded-full border border-neutral-200 bg-white
-           px-2.5 py-1 text-xs text-neutral-700
-           dark:border-neutral-800 dark:bg-neutral-800 dark:text-neutral-200;
+    @apply inline-flex items-center rounded-full border border-[rgb(var(--border))]
+           bg-[rgb(var(--panel))] px-2.5 py-1 text-xs text-[rgb(var(--muted))];
   }
 
-  .kv { @apply grid grid-cols-[160px_1fr] gap-y-1.5 text-sm; }
-  .k  { @apply text-neutral-500; }
+  .kv { @apply grid grid-cols-[160px_1fr] gap-y-2 text-sm; }
+  .k  { @apply text-[rgb(var(--muted))]; }
   .v  { @apply font-medium break-words; }
 
-  .code { @apply rounded-xl bg-neutral-950 text-neutral-100 p-4 text-xs overflow-x-auto dark:bg-neutral-900; }
-
-  .tablist {
-    @apply flex gap-1 p-1 rounded-xl bg-neutral-100 border border-neutral-200
-           dark:bg-neutral-900 dark:border-neutral-800;
+  .code {
+    @apply rounded-xl p-4 text-xs overflow-x-auto text-white;
+    background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)),
+                rgb(var(--code));
   }
-  .tab      { @apply px-3 py-1.5 text-sm rounded-lg text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white transition; }
-  .tab-active { @apply bg-white text-neutral-900 shadow-sm dark:bg-neutral-800; }
+
+  .tablist { @apply flex gap-1 p-1 rounded-xl border border-[rgb(var(--border))] bg-black/5 dark:bg-white/5; }
+  .tab { @apply px-3 py-1.5 text-sm rounded-lg text-[rgb(var(--muted))] hover:text-[rgb(var(--text))] transition; }
+  .tab-active { @apply bg-[rgb(var(--panel))] text-[rgb(var(--text))] shadow-sm; }
 
   .table-pro { @apply min-w-full text-sm; }
-  .th-pro    { @apply text-left text-neutral-600 dark:text-neutral-300 py-2 pr-4; }
+  .th-pro    { @apply text-left text-[rgb(var(--muted))] py-2 pr-4; }
   .td-pro    { @apply py-1.5 pr-4 align-top; }
 }
 
-/* Subtle selection & scrollbar polish */
-::selection { background: #111827; color: white; } /* neutral-900 */
+/* selection + scrollbar */
+::selection { background: rgb(var(--text)); color: white; }
 ::-webkit-scrollbar { height: 8px; width: 8px; }
-::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 9999px; }
-html.dark ::-webkit-scrollbar-thumb { background: #3f3f46; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,.12); border-radius: 9999px; }
+.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); }
