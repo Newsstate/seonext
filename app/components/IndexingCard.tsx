@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import got from 'got';
-import { XMLParser } from 'fast-xml-parser';
+import React, { useState } from 'react';
 
 export const runtime = 'nodejs';
 
