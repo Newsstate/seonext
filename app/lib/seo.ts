@@ -200,6 +200,23 @@ export function scoreFrom(result: SEOResult): ScoreBreakdown {
   if (result.duplication?.risk === 'medium') { content -= 10; notes.push('content:duplicate:medium'); }
   content = cap(content);
 
+  /** Jaccard similarity on 5-gram word shingles (0..1) */
+export function jaccard(a: string, b: string) {
+  const toShingles = (t: string) => {
+    const w = t.toLowerCase().split(/\s+/).filter(Boolean);
+    const s = new Set<string>();
+    for (let i = 0; i < w.length - 4; i++) s.add(w.slice(i, i + 5).join(' '));
+    return s;
+  };
+  const A = toShingles(a);
+  const B = toShingles(b);
+  if (A.size === 0 && B.size === 0) return 1;
+  if (A.size === 0 || B.size === 0) return 0;
+  let inter = 0;
+  for (const x of A) if (B.has(x)) inter++;
+  return inter / (A.size + B.size - inter);
+}
+
   // Technical
   let technical = start();
   if (!result.viewport) { technical -= 10; notes.push('tech:viewport:missing'); }
