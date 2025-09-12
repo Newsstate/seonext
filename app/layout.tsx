@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
+import ThemeToggle from './components/ThemeToggle';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -11,15 +12,27 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="h-full">
-      <body className={`${inter.className} min-h-screen bg-gradient-to-b from-neutral-50 to-white dark:from-neutral-950 dark:to-neutral-900`}>
-        <header className="sticky top-0 z-30 border-b backdrop-blur bg-white/70 dark:bg-neutral-950/60 dark:border-neutral-800">
+    <html lang="en" suppressHydrationWarning>
+      <body className={inter.className}>
+        <header className="sticky top-0 z-30 border-b border-[rgb(var(--border))] backdrop-blur bg-[rgb(var(--bg))]/80">
           <div className="container-pro py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="size-6 rounded-xl bg-neutral-900 dark:bg-white" />
+              <div className="size-6 rounded-xl bg-[rgb(var(--brand))]" />
               <div className="font-semibold tracking-tight">SEO Magic</div>
             </div>
-            <small className="text-xs text-neutral-500">build {process.env.NEXT_PUBLIC_COMMIT_SHA || 'local'}</small>
+            <div className="flex items-center gap-2">
+              <a
+                href="https://vercel.com/new/clone?repository-url="
+                target="_blank" rel="noreferrer"
+                className="btn-ghost"
+              >
+                Deploy on Vercel →
+              </a>
+              <ThemeToggle />
+              <small className="text-xs text-[rgb(var(--muted))]">
+                build {process.env.NEXT_PUBLIC_COMMIT_SHA || 'local'}
+              </small>
+            </div>
           </div>
         </header>
 
