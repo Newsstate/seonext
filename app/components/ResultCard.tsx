@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import ScorePills from './ScorePills';
-import PsiCard from './PsiCard';
 import IndexingCard from './IndexingCard';
+import PsiCard from './PsiCard'; // remove this + the tab below if you don't want PSI yet
 
 export default function ResultCard({ data }:{ data:any }){
   const [tab, setTab] = useState<string>('overview');
@@ -19,7 +19,7 @@ export default function ResultCard({ data }:{ data:any }){
     { key:'structured', label:'Structured Data' },
     { key:'technical', label:'Technical' },
     { key:'indexing', label:'Indexing' },
-    { key:'performance', label:'Performance' }
+    { key:'performance', label:'Performance' } // remove if not using PsiCard
   ];
 
   const TabNav = () => (
@@ -46,6 +46,9 @@ export default function ResultCard({ data }:{ data:any }){
         <div className="space-y-1">
           <div className="text-sm text-gray-500">Scanned</div>
           <div className="text-lg font-semibold">{data.finalUrl || data.url}</div>
+          {data.redirected && data.finalUrl !== data.url && (
+            <div className="text-xs text-gray-500">Redirected from: {data.url}</div>
+          )}
         </div>
         <ScorePills data={data} />
       </div>
@@ -61,7 +64,10 @@ export default function ResultCard({ data }:{ data:any }){
               <div className="kv">
                 <div className="k">Title</div><div className="v">{data.title || <i>—</i>}</div>
                 <div className="k">Description</div><div className="v">{data.metaDescription || <i>—</i>}</div>
-                <div className="k">Canonical</div><div className="v">{data.canonical || <i>—</i>}</div>
+                <div className="k">Canonical</div><div className="v">
+                  {data.canonical || <i>—</i>}
+                  {data.canonicalStatus && <span className="badge ml-2">{data.canonicalStatus}</span>}
+                </div>
                 <div className="k">Robots</div><div className="v">{data.robots || <i>—</i>}</div>
                 <div className="k">Viewport</div><div className="v">{data.viewport || <i>—</i>}</div>
                 <div className="k">Lang</div><div className="v">{data.lang || <i>—</i>}</div>
@@ -69,17 +75,28 @@ export default function ResultCard({ data }:{ data:any }){
                 <div className="k">Hreflang</div><div className="v">{(data.hreflang||[]).join(', ') || <i>—</i>}</div>
               </div>
             </section>
+
             <section>
-              <h3 className="font-semibold mb-3">Links</h3>
+              <h3 className="font-semibold mb-3">Links & Images</h3>
               <div className="kv">
-                <div className="k">Total</div><div className="v">{Links.total}</div>
-                <div className="k">Internal</div><div className="v">{Links.internal}</div>
-                <div className="k">External</div><div className="v">{Links.external}</div>
-                <div className="k">Nofollow</div><div className="v">{Links.nofollow}</div>
+                <div className="k">Links (Total)</div><div className="v">{Links.total ?? 0}</div>
+                <div className="k">Internal</div><div className="v">{Links.internal ?? 0}</div>
+                <div className="k">External</div><div className="v">{Links.external ?? 0}</div>
+                <div className="k">Nofollow</div><div className="v">{Links.nofollow ?? 0}</div>
                 <div className="k">Images (missing alt)</div><div className="v">{data.images?.missingAlt ?? 0}</div>
               </div>
             </section>
           </div>
+
+          {(data._issues?.length || data._warnings?.length) ? (
+            <section>
+              <h3 className="font-semibold mb-3">All Findings</h3>
+              <ul className="list-disc pl-6 space-y-1">
+                {(data._warnings||[]).map((w:string, i:number)=>(<li key={'w'+i} className="text-amber-700">⚠️ {w}</li>))}
+                {(data._issues||[]).map((w:string, i:number)=>(<li key={'e'+i} className="text-red-700">❌ {w}</li>))}
+              </ul>
+            </section>
+          ) : null}
         </>
       )}
 
@@ -103,7 +120,6 @@ export default function ResultCard({ data }:{ data:any }){
               <h3 className="font-semibold mb-3">Findings (Content)</h3>
               <ul className="list-disc pl-6 space-y-1">
                 {(data._warnings||[]).filter((w:string)=>/title|description|h1|og|twitter|image/i.test(w)).map((w:string, i:number)=>(<li key={'cw'+i} className="text-amber-700">⚠️ {w}</li>))}
-                {(data._issues||[]).map((w:string, i:number)=>(<li key={'ce'+i} className="text-red-700">❌ {w}</li>))}
               </ul>
             </section>
           ) : null}
@@ -115,10 +131,10 @@ export default function ResultCard({ data }:{ data:any }){
         <section>
           <h3 className="font-semibold mb-3">Links</h3>
           <div className="kv">
-            <div className="k">Total</div><div className="v">{Links.total}</div>
-            <div className="k">Internal</div><div className="v">{Links.internal}</div>
-            <div className="k">External</div><div className="v">{Links.external}</div>
-            <div className="k">Nofollow</div><div className="v">{Links.nofollow}</div>
+            <div className="k">Total</div><div className="v">{Links.total ?? 0}</div>
+            <div className="k">Internal</div><div className="v">{Links.internal ?? 0}</div>
+            <div className="k">External</div><div className="v">{Links.external ?? 0}</div>
+            <div className="k">Nofollow</div><div className="v">{Links.nofollow ?? 0}</div>
           </div>
         </section>
       )}
@@ -160,17 +176,6 @@ export default function ResultCard({ data }:{ data:any }){
 
       {/* PERFORMANCE */}
       {tab==='performance' && <PsiCard url={data.finalUrl || data.url} />}
-
-      {/* FALLBACK: show all findings if user is on overview */}
-      {tab==='overview' && (data._issues?.length || data._warnings?.length) ? (
-        <section>
-          <h3 className="font-semibold mb-3">All Findings</h3>
-          <ul className="list-disc pl-6 space-y-1">
-            {(data._warnings||[]).map((w:string, i:number)=>(<li key={'w'+i} className="text-amber-700">⚠️ {w}</li>))}
-            {(data._issues||[]).map((w:string, i:number)=>(<li key={'e'+i} className="text-red-700">❌ {w}</li>))}
-          </ul>
-        </section>
-      ) : null}
     </div>
   );
 }
