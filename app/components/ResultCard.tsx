@@ -6,7 +6,8 @@ import IndexingCard from './IndexingCard';
 import LinkCheckerCard from './LinkCheckerCard'; // remove if you didn't add it
 import PsiCard from './PsiCard'; // remove this + tab below if you don't want PSI yet
 import SitemapCard from './SitemapCard';
-
+import RedirectsCard from './RedirectsCard';
+import RobotsCard from './RobotsCard';
 export default function ResultCard({ data }:{ data:any }){
   const [tab, setTab] = useState<string>('overview');
 
@@ -184,6 +185,8 @@ export default function ResultCard({ data }:{ data:any }){
       {tab==='technical' && (
         <>
           <section>
+              <RedirectsCard url={data.finalUrl || data.url} />
+    <RobotsCard url={data.finalUrl || data.url} /> 
             <h3 className="font-semibold mb-3">Technical Basics</h3>
             <div className="kv">
               <div className="k">Viewport</div><div className="v">{data.viewport || <i>—</i>}</div>
