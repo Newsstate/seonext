@@ -35,8 +35,8 @@ export type ScoreBreakdown = {
 export type ContentStats = {
   words: number;
   sentences: number;
-  readMinutes: number;   // rounded up
-  flesch: number;        // Flesch Reading Ease
+  readMinutes: number;    // rounded up
+  flesch: number;         // Flesch Reading Ease
 };
 
 export type SecurityHeaders = {
@@ -113,7 +113,7 @@ export type SEOResult = {
   duplication?: DupReport;
   score?: ScoreBreakdown;
 
-  contentStats?: ContentStats;         // NEW
+  contentStats?: ContentStats;           // NEW
 
   _warnings: string[];
   _issues: string[];
@@ -173,7 +173,7 @@ export function readabilityStats(text: string): ContentStats {
   const sentences = Math.max(1, (text.match(/[.!?]+/g) || []).length);
   const syllables = wordsArr.reduce((sum,w)=> sum + countSyllables(w), 0);
   // Flesch Reading Ease
-  const flesch = 206.835 - 1.015 * (words / sentences) - 84.6 * (syllables / words || 0);
+  const flesch = 206.835 - 1.015 * (words / sentences) - 84.6 * (syllables / (words || 1));
   const readMinutes = Math.max(1, Math.ceil(words / 225)); // ~225 wpm
   return { words, sentences, readMinutes, flesch: Number((flesch||0).toFixed(1)) };
 }
@@ -212,7 +212,7 @@ export function scoreFrom(result: SEOResult): ScoreBreakdown {
   if (result.canonicalStatus === 'multiple') { technical -= 20; notes.push('tech:canonical:multiple'); }
   if (result.canonicalStatus === 'missing') { technical -= 6; notes.push('tech:canonical:missing'); }
   if (result.http?.scheme === 'http') { technical -= 10; notes.push('tech:http:not-secure'); }
-  if (result.http?.security) {
+  if (result.http?.security) { // Use optional chaining to safely access 'security'
     const sec = result.http.security;
     if (!sec.hsts && result.http.scheme === 'https') { technical -= 3; notes.push('tech:security:hsts'); }
     if (!sec.csp) { technical -= 3; notes.push('tech:security:csp'); }
@@ -282,64 +282,6 @@ export function jaccard(a: string, b: string) {
   return inter / (A.size + B.size - inter);
 }
 
-
-  // Technical
-  let technical = start();
-  if (!result.viewport) { technical -= 10; notes.push('tech:viewport:missing'); }
-  if (result.viewportFlags.blocksZoom) { technical -= 5; notes.push('tech:viewport:zoom'); }
-  if (!result.lang) { technical -= 5; notes.push('tech:lang:missing'); }
-  if (!result.charset) { technical -= 4; notes.push('tech:charset:missing'); }
-  if (result.renderBlocking.stylesheets > 3) { technical -= Math.min(12, result.renderBlocking.stylesheets * 2); notes.push('tech:css:blocking'); }
-  if (result.renderBlocking.scriptsHeadBlocking > 0) { technical -= Math.min(12, result.renderBlocking.scriptsHeadBlocking * 3); notes.push('tech:head-scripts:blocking'); }
-  if (result.links.total > 300) { technical -= 6; notes.push('tech:links:too-many'); }
-  if (result.canonicalStatus === 'multiple') { technical -= 20; notes.push('tech:canonical:multiple'); }
-  if (result.canonicalStatus === 'missing') { technical -= 6; notes.push('tech:canonical:missing'); }
-  if (result.http.scheme === 'http') { technical -= 10; notes.push('tech:http:not-secure'); }
-  // security headers (light deduction)
-  const sec = result.http.security;
-  if (sec) {
-    if (!sec.hsts) { technical -= 3; notes.push('tech:security:hsts'); }
-    if (!sec.csp) { technical -= 3; notes.push('tech:security:csp'); }
-    if (!sec.xContentTypeOptions) { technical -= 1; notes.push('tech:security:xcto'); }
-    if (!sec.xFrameOptions) { technical -= 1; notes.push('tech:security:xfo'); }
-    if (!sec.referrerPolicy) { technical -= 1; notes.push('tech:security:referrer'); }
-  }
-  technical = cap(technical);
-
-  // Indexing
-  let indexing = start();
-  if (result.robotsMeta.noindex) { indexing -= 100; notes.push('index:noindex'); }
-  if (result.robotsMeta.nofollow) { indexing -= 8; notes.push('index:nofollow'); }
-  indexing = cap(indexing);
-
-  // Links
-  let links = start();
-  if (result.links.nofollow > result.links.total * 0.5) { links -= 10; notes.push('links:nofollow:many'); }
-  links = cap(links);
-
-  // Structured
-  let structured = start();
-  if (!result.schemaTypes.length) { structured -= 10; notes.push('schema:none'); }
-  if (result.schemaAudit.Article && (!result.schemaAudit.Article.hasHeadline || !result.schemaAudit.Article.hasAuthor || !result.schemaAudit.Article.hasDatePublished)) {
-    structured -= 8; notes.push('schema:article:incomplete');
-  }
-  if (result.schemaAudit.Organization && (!result.schemaAudit.Organization.hasName || !result.schemaAudit.Organization.hasLogo)) {
-    structured -= 6; notes.push('schema:org:incomplete');
-  }
-  structured = cap(structured);
-
-  const weights = { content: 0.30, technical: 0.25, indexing: 0.25, links: 0.10, structured: 0.10 };
-  const overall = Math.round(
-    content * weights.content +
-    technical * weights.technical +
-    indexing * weights.indexing +
-    links * weights.links +
-    structured * weights.structured
-  );
-
-  return { overall, content: Math.round(content), technical: Math.round(technical), indexing: Math.round(indexing), links: Math.round(links), structured: Math.round(structured), notes };
-}
-
 /* --- main parser (unchanged logic + small extras) --- */
 export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<string, any>, respStatus?: number): SEOResult {
   const $ = cheerio.load(html);
@@ -367,7 +309,7 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
   };
 
   if (http.scheme === 'http') warnings.push('Page served over HTTP; use HTTPS.');
-  if (!http.security?.hsts && http.scheme === 'https') warnings.push('HSTS header missing.');
+  if (http.scheme === 'https' && !http.security?.hsts) warnings.push('HSTS header missing.');
   if (!http.security?.csp) warnings.push('Content-Security-Policy not present.');
   if (!http.security?.xContentTypeOptions) warnings.push('X-Content-Type-Options missing.');
   if (!http.security?.xFrameOptions) warnings.push('X-Frame-Options missing.');
@@ -429,8 +371,9 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
   const h3Count = $('h3').length;
   const headingsList: Array<{level:'h1'|'h2'|'h3'; text:string}> = [];
   $('h1,h2,h3').each((_, el)=>{
+    const $el = $(el); // Use the existing cheerio instance for efficiency
     const tag = (el.tagName as 'h1'|'h2'|'h3');
-    headingsList.push({ level: tag, text: cheerio.load(el).text().trim().slice(0,200) });
+    headingsList.push({ level: tag, text: $el.text().trim().slice(0,200) });
   });
   if (h1Count === 0) warnings.push('No <h1> found.');
   if (h1Count > 1) warnings.push('Multiple <h1> elements found.');
@@ -444,8 +387,9 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
   let hasXDefault = false;
   const seen = new Set<string>();
   $('link[rel="alternate"][hreflang]').each((_, el) => {
-    const v = String(cheerio.load(el)(el).attr('hreflang') || '').trim();
-    const href = String(cheerio.load(el)(el).attr('href') || '').trim();
+    const $el = $(el); // Use the existing cheerio instance
+    const v = String($el.attr('hreflang') || '').trim();
+    const href = String($el.attr('href') || '').trim();
     if (!v) return;
     hreflang.push(v);
     const lower = v.toLowerCase();
@@ -459,22 +403,25 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
   // Images
   const imgs = $('img'); let missingAlt = 0, missingDim = 0, missingLoading = 0;
   imgs.each((_, el) => {
-    const $el = cheerio.load(el)(el) as any;
-    const alt = ($el.attribs?.alt||'').trim();
-    const width = ($el.attribs?.width||'').trim();
-    const height = ($el.attribs?.height||'').trim();
-    const loading = ($el.attribs?.loading||'').trim().toLowerCase();
-    if (!alt) missingAlt++; if (!width || !height) missingDim++; if (loading && loading !== 'lazy') missingLoading++;
+    const $el = $(el); // Use the existing cheerio instance
+    const alt = ($el.attr('alt')||'').trim();
+    const width = ($el.attr('width')||'').trim();
+    const height = ($el.attr('height')||'').trim();
+    const loading = ($el.attr('loading')||'').trim().toLowerCase();
+    if (!alt) missingAlt++;
+    if (!width || !height) missingDim++;
+    if (loading !== 'lazy') missingLoading++; // Corrected logic: Check if loading is not lazy
   });
   if (missingAlt > 0) warnings.push(`${missingAlt} images missing alt.`);
   if (missingDim > 0) warnings.push(`${missingDim} images missing explicit width/height.`);
+  if (missingLoading > 0) warnings.push(`${missingLoading} images not using loading="lazy".`);
 
   // Links
   const anchors = $('a[href]'); let internal = 0, external = 0, nofollow = 0;
   anchors.each((_, el) => {
-    const $a = cheerio.load(el)(el) as any;
-    const href = String($a.attribs?.href || '').trim(); if (!href) return;
-    const rel = String($a.attribs?.rel || '').toLowerCase(); if (rel.includes('nofollow')) nofollow++;
+    const $a = $(el); // Use the existing cheerio instance
+    const href = String($a.attr('href') || '').trim(); if (!href) return;
+    const rel = String($a.attr('rel') || '').toLowerCase(); if (rel.includes('nofollow')) nofollow++;
     try { const u = new URL(href, urlObj.origin);
       if (/^https?:/.test(u.protocol)) { if (u.origin === urlObj.origin) internal++; else external++; }
     } catch {}
@@ -489,13 +436,14 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
   };
   let blockingCSS = 0, blockingHeadScripts = 0, totalScripts = $('script').length;
   $('link[rel="stylesheet"]').each((_, el)=>{
-    const rel = String(cheerio.load(el)(el).attribs?.rel||'').toLowerCase();
-    const media = String(cheerio.load(el)(el).attribs?.media||'').trim();
-    const disabled = (cheerio.load(el)(el).attribs?.disabled) !== undefined;
+    const $el = $(el); // Use the existing cheerio instance
+    const rel = String($el.attr('rel')||'').toLowerCase();
+    const media = String($el.attr('media')||'').trim();
+    const disabled = $el.attr('disabled') !== undefined;
     if (rel === 'stylesheet' && !media && !disabled) blockingCSS++;
   });
   $('head script[src]').each((_, el)=>{
-    const a = cheerio.load(el)(el).attribs;
+    const a = $(el).attr(); // Use the existing cheerio instance
     if (!('async' in a) && !('defer' in a)) blockingHeadScripts++;
   });
   if (blockingCSS > 3) warnings.push(`Many render-blocking stylesheets (${blockingCSS}).`);
@@ -510,14 +458,16 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
   // Social
   const og: Record<string,string> = {};
   $('meta[property^="og:"]').each((_, el) => {
-    const key = String(cheerio.load(el)(el).attribs?.property||'').toLowerCase();
-    const val = String(cheerio.load(el)(el).attribs?.content||'').trim();
+    const $el = $(el); // Use the existing cheerio instance
+    const key = String($el.attr('property')||'').toLowerCase();
+    const val = String($el.attr('content')||'').trim();
     if (key) og[key] = val;
   });
   const twitter: Record<string,string> = {};
   $('meta[name^="twitter:"]').each((_, el) => {
-    const key = String(cheerio.load(el)(el).attribs?.name||'').toLowerCase();
-    const val = String(cheerio.load(el)(el).attribs?.content||'').trim();
+    const $el = $(el); // Use the existing cheerio instance
+    const key = String($el.attr('name')||'').toLowerCase();
+    const val = String($el.attr('content')||'').trim();
     if (key) twitter[key] = val;
   });
   if (!og['og:title'] || !og['og:description']) warnings.push('Open Graph title/description incomplete.');
@@ -548,7 +498,7 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
     }
   };
   $('script[type="application/ld+json"]').each((_, el) => { try {
-    const txt = cheerio.load(el)(el).children().text();
+    const txt = $(el).text(); // Use the existing cheerio instance
     if (txt) dig(JSON.parse(txt));
   } catch {} });
 
