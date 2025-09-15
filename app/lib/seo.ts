@@ -442,12 +442,14 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
     const disabled = $el.attr('disabled') !== undefined;
     if (rel === 'stylesheet' && !media && !disabled) blockingCSS++;
   });
-  $('head script[src]').each((_, el)=>{
-    const a = $(el).attr(); // Use the existing cheerio instance
-    if (!('async' in a) && !('defer' in a)) blockingHeadScripts++;
-  });
-  if (blockingCSS > 3) warnings.push(`Many render-blocking stylesheets (${blockingCSS}).`);
-  if (blockingHeadScripts > 0) warnings.push(`Render-blocking scripts in <head> (${blockingHeadScripts}).`);
+$('head script[src]').each((_, el)=>{
+  // Fix: Provide a default empty object in case the .attr() call returns undefined.
+  // This prevents the 'a' is possibly 'undefined' type error.
+  const a = $(el).attr() || {};
+  if (!('async' in a) && !('defer' in a)) blockingHeadScripts++;
+});
+if (blockingCSS > 3) warnings.push(`Many render-blocking stylesheets (${blockingCSS}).`);
+if (blockingHeadScripts > 0) warnings.push(`Render-blocking scripts in <head> (${blockingHeadScripts}).`);
 
   // Icons / PWA / AMP
   const favicon = abs(urlObj, $('link[rel="icon"]').attr('href') || $('link[rel="shortcut icon"]').attr('href'));
