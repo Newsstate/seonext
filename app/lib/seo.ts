@@ -181,7 +181,7 @@ export function readabilityStats(text: string): ContentStats {
 /* --- scoring --- */
 export function scoreFrom(result: SEOResult): ScoreBreakdown {
   let notes: string[] = [];
-  const cap = (v: number, min=0, max=100) => Math.max(min, Math.min(max, v));
+  const cap = (v: number, min = 0, max = 100) => Math.max(min, Math.min(max, v));
   const start = () => 100;
 
   // Content
@@ -200,7 +200,72 @@ export function scoreFrom(result: SEOResult): ScoreBreakdown {
   if (result.duplication?.risk === 'medium') { content -= 10; notes.push('content:duplicate:medium'); }
   content = cap(content);
 
-  /** Jaccard similarity on 5-gram word shingles (0..1) */
+  // Technical
+  let technical = start();
+  if (!result.viewport) { technical -= 10; notes.push('tech:viewport:missing'); }
+  if (result.viewportFlags.blocksZoom) { technical -= 5; notes.push('tech:viewport:zoom'); }
+  if (!result.lang) { technical -= 5; notes.push('tech:lang:missing'); }
+  if (!result.charset) { technical -= 4; notes.push('tech:charset:missing'); }
+  if (result.renderBlocking.stylesheets > 3) { technical -= Math.min(12, result.renderBlocking.stylesheets * 2); notes.push('tech:css:blocking'); }
+  if (result.renderBlocking.scriptsHeadBlocking > 0) { technical -= Math.min(12, result.renderBlocking.scriptsHeadBlocking * 3); notes.push('tech:head-scripts:blocking'); }
+  if (result.links.total > 300) { technical -= 6; notes.push('tech:links:too-many'); }
+  if (result.canonicalStatus === 'multiple') { technical -= 20; notes.push('tech:canonical:multiple'); }
+  if (result.canonicalStatus === 'missing') { technical -= 6; notes.push('tech:canonical:missing'); }
+  if (result.http?.scheme === 'http') { technical -= 10; notes.push('tech:http:not-secure'); }
+  if (result.http?.security) {
+    const sec = result.http.security;
+    if (!sec.hsts && result.http.scheme === 'https') { technical -= 3; notes.push('tech:security:hsts'); }
+    if (!sec.csp) { technical -= 3; notes.push('tech:security:csp'); }
+    if (!sec.xContentTypeOptions) { technical -= 1; notes.push('tech:security:xcto'); }
+    if (!sec.xFrameOptions) { technical -= 1; notes.push('tech:security:xfo'); }
+    if (!sec.referrerPolicy) { technical -= 1; notes.push('tech:security:referrer'); }
+  }
+  technical = cap(technical);
+
+  // Indexing
+  let indexing = start();
+  if (result.robotsMeta.noindex) { indexing -= 100; notes.push('index:noindex'); }
+  if (result.robotsMeta.nofollow) { indexing -= 8; notes.push('index:nofollow'); }
+  indexing = cap(indexing);
+
+  // Links (on-page signals only)
+  let links = start();
+  if (result.links.nofollow > result.links.total * 0.5) { links -= 10; notes.push('links:nofollow:many'); }
+  links = cap(links);
+
+  // Structured
+  let structured = start();
+  if (!result.schemaTypes.length) { structured -= 10; notes.push('schema:none'); }
+  if (result.schemaAudit?.Article && (!result.schemaAudit.Article.hasHeadline || !result.schemaAudit.Article.hasAuthor || !result.schemaAudit.Article.hasDatePublished)) {
+    structured -= 8; notes.push('schema:article:incomplete');
+  }
+  if (result.schemaAudit?.Organization && (!result.schemaAudit.Organization.hasName || !result.schemaAudit.Organization.hasLogo)) {
+    structured -= 6; notes.push('schema:org:incomplete');
+  }
+  structured = cap(structured);
+
+  // Weighted overall
+  const weights = { content: 0.30, technical: 0.25, indexing: 0.25, links: 0.10, structured: 0.10 };
+  const overall = Math.round(
+    content * weights.content +
+    technical * weights.technical +
+    indexing * weights.indexing +
+    links * weights.links +
+    structured * weights.structured
+  );
+
+  return {
+    overall,
+    content: Math.round(content),
+    technical: Math.round(technical),
+    indexing: Math.round(indexing),
+    links: Math.round(links),
+    structured: Math.round(structured),
+    notes
+  };
+}
+
+/** Jaccard similarity on 5-gram word shingles (0..1) */
 export function jaccard(a: string, b: string) {
   const toShingles = (t: string) => {
     const w = t.toLowerCase().split(/\s+/).filter(Boolean);
@@ -216,6 +281,7 @@ export function jaccard(a: string, b: string) {
   for (const x of A) if (B.has(x)) inter++;
   return inter / (A.size + B.size - inter);
 }
+
 
   // Technical
   let technical = start();
