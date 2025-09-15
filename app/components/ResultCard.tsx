@@ -30,6 +30,22 @@ export default function ResultCard({ data }: { data: any }) {
     { key: "performance", label: "Performance" },
   ];
 
+  const getStatusColor = (status: number | undefined) => {
+    if (!status) return "bg-gray-100 text-gray-600";
+    if (status >= 200 && status < 300) return "bg-green-100 text-green-700";
+    if (status >= 300 && status < 400) return "bg-blue-100 text-blue-700";
+    if (status >= 400 && status < 500) return "bg-yellow-100 text-yellow-700";
+    return "bg-red-100 text-red-700";
+  };
+
+  const getRobotsColor = (robotsMeta: any, robots: string) => {
+    if (!robotsMeta && !robots) return "bg-gray-100 text-gray-600";
+    const isNoIndex = robotsMeta?.index === false || /noindex/i.test(robots);
+    return isNoIndex
+      ? "bg-red-100 text-red-700"
+      : "bg-green-100 text-green-700";
+  };
+
   const TabNav = () => (
     <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-2">
       {tabs.map((t) => (
@@ -87,25 +103,46 @@ export default function ResultCard({ data }: { data: any }) {
               <div className="flex flex-wrap gap-2 items-center">
                 {data.canonical || <i>—</i>}
                 {data.canonicalStatus && (
-                  <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">
+                  <span
+                    className={`px-2 py-0.5 text-xs rounded-full ${
+                      data.canonicalStatus === "Valid"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-red-100 text-red-700"
+                    }`}
+                  >
                     {data.canonicalStatus}
                   </span>
                 )}
               </div>
 
               <div className="font-medium">HTTP Status</div>
-              <div>{data.http?.status ?? "—"}</div>
+              <div>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                    data.http?.status
+                  )}`}
+                >
+                  {data.http?.status ?? "—"}
+                </span>
+              </div>
 
               <div className="font-medium">X-Robots-Tag</div>
               <div>{data.http?.xRobotsTag || <i>—</i>}</div>
 
               <div className="font-medium">Robots</div>
               <div>
-                {data.robotsMeta
-                  ? `${data.robotsMeta.index ? "index" : "noindex"}, ${
-                      data.robotsMeta.follow ? "follow" : "nofollow"
-                    }${data.robotsMeta.raw ? ` (${data.robotsMeta.raw})` : ""}`
-                  : data.robots || <i>—</i>}
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRobotsColor(
+                    data.robotsMeta,
+                    data.robots
+                  )}`}
+                >
+                  {data.robotsMeta
+                    ? `${data.robotsMeta.index ? "index" : "noindex"}, ${
+                        data.robotsMeta.follow ? "follow" : "nofollow"
+                      }${data.robotsMeta.raw ? ` (${data.robotsMeta.raw})` : ""}`
+                    : data.robots || "—"}
+                </span>
               </div>
 
               <div className="font-medium">Viewport</div>
@@ -171,8 +208,7 @@ export default function ResultCard({ data }: { data: any }) {
         </div>
       )}
 
-      {/* CONTENT, LINKS, STRUCTURED, TECHNICAL, INDEXING, PERFORMANCE */}
-      {/* (Remaining sections unchanged except for consistent styling) */}
+      {/* Other Tabs unchanged except styling */}
       {tab === "content" && (
         <>
           <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
@@ -244,11 +280,18 @@ export default function ResultCard({ data }: { data: any }) {
 
               <div className="font-medium">Robots</div>
               <div>
-                {data.robotsMeta
-                  ? `${data.robotsMeta.index ? "index" : "noindex"}, ${
-                      data.robotsMeta.follow ? "follow" : "nofollow"
-                    }`
-                  : data.robots || <i>—</i>}
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRobotsColor(
+                    data.robotsMeta,
+                    data.robots
+                  )}`}
+                >
+                  {data.robotsMeta
+                    ? `${data.robotsMeta.index ? "index" : "noindex"}, ${
+                        data.robotsMeta.follow ? "follow" : "nofollow"
+                      }`
+                    : data.robots || "—"}
+                </span>
               </div>
             </div>
           </section>
