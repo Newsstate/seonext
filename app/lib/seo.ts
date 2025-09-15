@@ -427,20 +427,27 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
   if (invalid.length) warnings.push(`Invalid hreflang values: ${invalid.join(', ')}`);
 
   // Images
-  const imgs = $('img'); let missingAlt = 0, missingDim = 0, missingLoading = 0;
-  imgs.each((_, el) => {
-    const $el = $(el); // Use the existing cheerio instance
-    const alt = ($el.attr('alt')||'').trim();
-    const width = ($el.attr('width')||'').trim();
-    const height = ($el.attr('height')||'').trim();
-    const loading = ($el.attr('loading')||'').trim().toLowerCase();
-    if (!alt) missingAlt++;
-    if (!width || !height) missingDim++;
-    if (loading !== 'lazy') missingLoading++; // Corrected logic: Check if loading is not lazy
-  });
-  if (missingAlt > 0) warnings.push(`${missingAlt} images missing alt.`);
-  if (missingDim > 0) warnings.push(`${missingDim} images missing explicit width/height.`);
-  if (missingLoading > 0) warnings.push(`${missingLoading} images not using loading="lazy".`);
+ // Images
+const imgs = $('img');
+let missingAlt = 0, missingDim = 0, missingLoading = 0;
+const imagesList: ImageItem[] = [];
+imgs.each((_, el) => {
+  const $el: any = cheerio.load(el)(el);
+  const alt = ($el.attribs?.alt||'').trim();
+  const width = ($el.attribs?.width||'').trim();
+  const height = ($el.attribs?.height||'').trim();
+  const loading = ($el.attribs?.loading||'').trim().toLowerCase();
+  const src = ($el.attribs?.src||'').trim();
+
+  if (!alt) missingAlt++;
+  if (!width || !height) missingDim++;
+  if (loading && loading !== 'lazy') missingLoading++;
+
+  if (src) imagesList.push({ src: abs(urlObj, src)!, alt, width, height, loading });
+});
+if (missingAlt > 0) warnings.push(`${missingAlt} images missing alt.`);
+if (missingDim > 0) warnings.push(`${missingDim} images missing explicit width/height.`);
+
 
   // Links
   const anchors = $('a[href]'); let internal = 0, external = 0, nofollow = 0;
@@ -453,6 +460,33 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
     } catch {}
   });
   if ((anchors.length || 0) > 300) warnings.push('Large number of links on page (>300).');
+
+
+  // Mixed content (only relevant if page is HTTPS)
+let mixedCount = 0;
+const mixedSamples: string[] = [];
+if (urlObj.protocol === 'https:') {
+  const collect = (sel: string, attr: 'href'|'src') => {
+    $(sel).each((_, el) => {
+      const v = String(cheerio.load(el)(el).attr(attr) || '').trim();
+      if (!v) return;
+      try {
+        const u = new URL(v, urlObj);
+        if (u.protocol === 'http:') {
+          mixedCount++;
+          if (mixedSamples.length < 5) mixedSamples.push(u.toString());
+        }
+      } catch { /* ignore */ }
+    });
+  };
+  collect('img[src]', 'src');
+  collect('script[src]', 'src');
+  collect('link[href]', 'href');
+  collect('video[src], audio[src], source[src], iframe[src]', 'src');
+  if (mixedCount > 0) {
+    warnings.push(`Mixed content on HTTPS page (${mixedCount} http resources).`);
+  }
+}
 
   // Resource hints / render blocking
   const resourceHints = {
@@ -547,6 +581,7 @@ if (blockingHeadScripts > 0) warnings.push(`Render-blocking scripts in <head> ($
     hreflangMap,
     hreflangValidation: { duplicates, invalid, hasXDefault },
     images: { total: imgs.length, missingAlt, missingDimensions: missingDim, missingLoading },
+    mixedContent: mixedCount ? { total: mixedCount, samples: mixedSamples } : { total: 0, samples: [] }, // NEW
     links: { total: anchors.length, internal, external, nofollow },
     resourceHints,
     renderBlocking: { stylesheets: blockingCSS, scriptsHeadBlocking: blockingHeadScripts, scriptsTotal: totalScripts },
