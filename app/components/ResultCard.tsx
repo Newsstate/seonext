@@ -5,6 +5,7 @@ import ScorePills from './ScorePills';
 import IndexingCard from './IndexingCard';
 import LinkCheckerCard from './LinkCheckerCard'; // remove if you didn't add it
 import PsiCard from './PsiCard'; // remove this + tab below if you don't want PSI yet
+import SitemapCard from './SitemapCard';
 
 export default function ResultCard({ data }:{ data:any }){
   const [tab, setTab] = useState<string>('overview');
@@ -209,6 +210,7 @@ export default function ResultCard({ data }:{ data:any }){
 
       {/* INDEXING */}
       {tab==='indexing' && <IndexingCard url={data.finalUrl || data.url} />}
+    <SitemapCard url={data.finalUrl || data.url} />
 
       {/* PERFORMANCE */}
       {tab==='performance' && <PsiCard url={data.finalUrl || data.url} />}
