@@ -159,7 +159,7 @@ export default function ResultCard({ data }:{ data:any }){
         </>
       )}
 
-     // LINKS
+     
 {tab==='links' && (
   <>
     <section>
