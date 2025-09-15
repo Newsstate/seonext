@@ -11,7 +11,7 @@ import RobotsCard from './RobotsCard';
 import HreflangCard from './HreflangCard';
 import CanonicalizeCard from './CanonicalizeCard';
 import ImageAuditCard from './ImageAuditCard';
-import LinkCheckerCard from './LinkCheckerCard';
+
 import HeadersCard from './HeadersCard';
 import AmpCard from './AmpCard';
 export default function ResultCard({ data }:{ data:any }){
