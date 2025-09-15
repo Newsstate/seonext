@@ -8,6 +8,8 @@ import PsiCard from './PsiCard'; // remove this + tab below if you don't want PS
 import SitemapCard from './SitemapCard';
 import RedirectsCard from './RedirectsCard';
 import RobotsCard from './RobotsCard';
+import HreflangCard from './HreflangCard';
+import CanonicalizeCard from './CanonicalizeCard';
 export default function ResultCard({ data }:{ data:any }){
   const [tab, setTab] = useState<string>('overview');
 
@@ -212,6 +214,7 @@ export default function ResultCard({ data }:{ data:any }){
         </ul>
       </section>
     )}
+    <CanonicalizeCard url={data.finalUrl || data.url} />
 
     <RedirectsCard url={data.finalUrl || data.url} />
     <RobotsCard    url={data.finalUrl || data.url} />
@@ -224,6 +227,7 @@ export default function ResultCard({ data }:{ data:any }){
   <>
     <IndexingCard url={data.finalUrl || data.url} />
     <SitemapCard  url={data.finalUrl || data.url} />
+        <HreflangCard url={data.finalUrl || data.url} />
   </>
 )}
 
