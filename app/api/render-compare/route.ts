@@ -22,7 +22,6 @@ function sameSet(a?: string[], b?: string[]) {
 function normalizeStr(v?: string | null) {
   return (v || '').toString().trim();
 }
-
 function domSize(html: string) {
   const $ = cheerio.load(html);
   return $('*').length;
@@ -35,49 +34,47 @@ export async function POST(req: NextRequest) {
 
     if (!url) return new Response(JSON.stringify({ ok:false, error:'Missing url' }), { status:400 });
 
-    // -------- No-JS fetch --------
+    // ---- No-JS fetch ----
     const baseResp = await got(url, { followRedirect: true, throwHttpErrors: false, timeout:{ request: 20000 } });
     if (baseResp.statusCode >= 400) {
       return new Response(JSON.stringify({ ok:false, error:`Source returned ${baseResp.statusCode}` }), { status:200 });
     }
-    const noJsUrl = baseResp.url;
+    const noJsUrl  = baseResp.url;
     const noJsHtml = baseResp.body;
-    const noJsSEO = parseSEO(noJsHtml, noJsUrl, baseResp.headers as any, baseResp.statusCode);
+    const noJsSEO  = parseSEO(noJsHtml, noJsUrl, baseResp.headers as any, baseResp.statusCode);
     const noJsText = extractMainText(noJsHtml).text;
-    const noJsDom = domSize(noJsHtml);
+    const noJsDom  = domSize(noJsHtml);
 
-    // -------- JS-rendered fetch (headless) --------
+    // ---- JS-rendered fetch (headless) ----
     const executablePath = await chromium.executablePath();
     const browser = await puppeteer.launch({
       args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
       executablePath,
-      headless: chromium.headless,
+      headless: chromium.headless ?? true, // don’t use chromium.defaultViewport (no longer exists)
     });
+
     const page = await browser.newPage();
+    // set your own viewport if you want deterministic layout
+    await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
 
-    // Desktop-like UA; tweak if you want mobile parity
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118 Safari/537.36');
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118 Safari/537.36'
+    );
 
-    const resp = await page.goto(url, {
-      waitUntil,
-      timeout: renderTimeoutMs,
-    });
+    const resp = await page.goto(url, { waitUntil, timeout: renderTimeoutMs });
+    await page.waitForTimeout(300); // tiny settle
 
-    // small “settle” pause for late JS
-    await page.waitForTimeout(300);
-
-    const renderedHtml = await page.content();
-    const renderedUrl = page.url();
-    const renderedStatus = resp?.status();
+    const renderedHtml    = await page.content();
+    const renderedUrl     = page.url();
+    const renderedStatus  = resp?.status();
     const renderedHeaders = (await resp?.headers()) || {};
     await browser.close();
 
-    const renderedSEO = parseSEO(renderedHtml, renderedUrl, renderedHeaders as any, renderedStatus);
+    const renderedSEO  = parseSEO(renderedHtml, renderedUrl, renderedHeaders as any, renderedStatus);
     const renderedText = extractMainText(renderedHtml).text;
-    const renderedDom = domSize(renderedHtml);
+    const renderedDom  = domSize(renderedHtml);
 
-    // -------- Build diffs --------
+    // ---- Build diffs ----
     const diffs: DiffRow[] = [];
     const push = (key: string, a: any, b: any, cmp?: (a:any,b:any)=>boolean) => {
       const same = cmp ? cmp(a,b) : (JSON.stringify(a) === JSON.stringify(b));
@@ -85,74 +82,68 @@ export async function POST(req: NextRequest) {
     };
 
     // Meta/basics
-    push('title', noJsSEO.title, renderedSEO.title);
-    push('metaDescription', noJsSEO.metaDescription, renderedSEO.metaDescription);
-    push('canonical', noJsSEO.canonical, renderedSEO.canonical);
-    push('robotsMeta.raw', noJsSEO.robotsMeta?.raw ?? null, renderedSEO.robotsMeta?.raw ?? null);
-    push('robotsMeta.index', noJsSEO.robotsMeta?.index ?? null, renderedSEO.robotsMeta?.index ?? null);
-    push('robotsMeta.follow', noJsSEO.robotsMeta?.follow ?? null, renderedSEO.robotsMeta?.follow ?? null);
-    push('viewport', noJsSEO.viewport, renderedSEO.viewport);
-    push('lang', noJsSEO.lang, renderedSEO.lang);
+    push('title',               noJsSEO.title,                 renderedSEO.title);
+    push('metaDescription',     noJsSEO.metaDescription,       renderedSEO.metaDescription);
+    push('canonical',           noJsSEO.canonical,             renderedSEO.canonical);
+    push('robotsMeta.raw',      noJsSEO.robotsMeta?.raw ?? null,     renderedSEO.robotsMeta?.raw ?? null);
+    push('robotsMeta.index',    noJsSEO.robotsMeta?.index ?? null,   renderedSEO.robotsMeta?.index ?? null);
+    push('robotsMeta.follow',   noJsSEO.robotsMeta?.follow ?? null,  renderedSEO.robotsMeta?.follow ?? null);
+    push('viewport',            noJsSEO.viewport,              renderedSEO.viewport);
+    push('lang',                noJsSEO.lang,                  renderedSEO.lang);
 
     // Headings
-    push('h1Count', noJsSEO.h1Count, renderedSEO.h1Count);
-    push('headings.h2', noJsSEO.headings?.h2 ?? 0, renderedSEO.headings?.h2 ?? 0);
-    push('headings.h3', noJsSEO.headings?.h3 ?? 0, renderedSEO.headings?.h3 ?? 0);
+    push('h1Count',             noJsSEO.h1Count,               renderedSEO.h1Count);
+    push('headings.h2',         noJsSEO.headings?.h2 ?? 0,     renderedSEO.headings?.h2 ?? 0);
+    push('headings.h3',         noJsSEO.headings?.h3 ?? 0,     renderedSEO.headings?.h3 ?? 0);
 
     // Links / Images
-    push('links.total', noJsSEO.links.total, renderedSEO.links.total);
-    push('links.internal', noJsSEO.links.internal, renderedSEO.links.internal);
-    push('links.external', noJsSEO.links.external, renderedSEO.links.external);
-    push('links.nofollow', noJsSEO.links.nofollow, renderedSEO.links.nofollow);
-    push('images.missingAlt', noJsSEO.images?.missingAlt ?? 0, renderedSEO.images?.missingAlt ?? 0);
+    push('links.total',         noJsSEO.links.total,           renderedSEO.links.total);
+    push('links.internal',      noJsSEO.links.internal,        renderedSEO.links.internal);
+    push('links.external',      noJsSEO.links.external,        renderedSEO.links.external);
+    push('links.nofollow',      noJsSEO.links.nofollow,        renderedSEO.links.nofollow);
+    push('images.missingAlt',   noJsSEO.images?.missingAlt ?? 0, renderedSEO.images?.missingAlt ?? 0);
 
     // Social
-    push('og:title', normalizeStr(noJsSEO.og['og:title']), normalizeStr(renderedSEO.og['og:title']));
-    push('og:description', normalizeStr(noJsSEO.og['og:description']), normalizeStr(renderedSEO.og['og:description']));
-    push('twitter:card', normalizeStr(noJsSEO.twitter['twitter:card']), normalizeStr(renderedSEO.twitter['twitter:card']));
+    const norm = (s?:string|null)=> (s||'').trim();
+    push('og:title',            norm(noJsSEO.og['og:title']),        norm(renderedSEO.og['og:title']));
+    push('og:description',      norm(noJsSEO.og['og:description']),  norm(renderedSEO.og['og:description']));
+    push('twitter:card',        norm(noJsSEO.twitter['twitter:card']), norm(renderedSEO.twitter['twitter:card']));
 
     // Structured data
-    push('schemaTypes', noJsSEO.schemaTypes, renderedSEO.schemaTypes, sameSet);
+    const asSet = (arr?: string[]) => new Set((arr||[]).map(String));
+    const sameSet = (a?: string[], b?: string[]) => {
+      const A = asSet(a), B = asSet(b);
+      if (A.size !== B.size) return false;
+      for (const x of A) if (!B.has(x)) return false;
+      return true;
+    };
+    push('schemaTypes',         noJsSEO.schemaTypes,           renderedSEO.schemaTypes, sameSet);
 
     // HTTP
-    push('http.status', noJsSEO.http?.status ?? null, renderedSEO.http?.status ?? null);
-    push('http.contentType', noJsSEO.http?.contentType ?? null, renderedSEO.http?.contentType ?? null);
-    push('http.xRobotsTag', noJsSEO.http?.xRobotsTag ?? null, renderedSEO.http?.xRobotsTag ?? null);
+    push('http.status',         noJsSEO.http?.status ?? baseResp.statusCode, renderedSEO.http?.status ?? renderedStatus ?? null);
+    push('http.contentType',    noJsSEO.http?.contentType ?? null,           renderedSEO.http?.contentType ?? null);
+    push('http.xRobotsTag',     noJsSEO.http?.xRobotsTag ?? null,            renderedSEO.http?.xRobotsTag ?? null);
 
-    // Hreflang (compare by href list)
-    push(
-      'hreflang.map',
-      (noJsSEO.hreflangMap || []).map(x => `${x.lang}:${x.href}`),
-      (renderedSEO.hreflangMap || []).map(x => `${x.lang}:${x.href}`),
-      sameSet
-    );
+    // Hreflang (compare by lang:href)
+    const mapList = (m?: Array<{lang:string; href:string}>) => (m||[]).map(x => `${x.lang}:${x.href}`);
+    push('hreflang.map',        mapList(noJsSEO.hreflangMap),  mapList(renderedSEO.hreflangMap), sameSet);
 
     // Content stats + similarity
-    const noJsWords = noJsSEO.contentStats?.words ?? extractMainText(noJsHtml).words;
-    const renderedWords = renderedSEO.contentStats?.words ?? extractMainText(renderedHtml).words;
-    push('content.words', noJsWords, renderedWords);
+    const noJsWords      = noJsSEO.contentStats?.words ?? extractMainText(noJsHtml).words;
+    const renderedWords  = renderedSEO.contentStats?.words ?? extractMainText(renderedHtml).words;
+    push('content.words',       noJsWords,                     renderedWords);
 
     const textSimilarity = Number(jaccard(noJsText, renderedText).toFixed(3));
-    const keyChanges = diffs.filter(d => !d.same);
+    const keyChanges     = diffs.filter(d => !d.same);
 
     return new Response(JSON.stringify({
       ok: true,
       data: {
-        noJs: {
-          url: noJsUrl,
-          status: noJsSEO.http?.status ?? baseResp.statusCode,
-          domSize: noJsDom,
-          words: noJsWords,
-        },
-        rendered: {
-          url: renderedUrl,
-          status: renderedSEO.http?.status ?? renderedStatus ?? null,
-          domSize: renderedDom,
-          words: renderedWords,
-        },
-        summary: {
+        noJs:     { url: noJsUrl,     status: noJsSEO.http?.status ?? baseResp.statusCode, domSize: noJsDom,     words: noJsWords },
+        rendered: { url: renderedUrl, status: renderedSEO.http?.status ?? renderedStatus ?? null, domSize: renderedDom, words: renderedWords },
+        summary:  {
           textSimilarity,                  // 0..1
-          domDelta: renderedDom - noJsDom,
+          domDelta:   renderedDom - noJsDom,
           wordsDelta: renderedWords - noJsWords,
           keyChangesCount: keyChanges.length,
         },
