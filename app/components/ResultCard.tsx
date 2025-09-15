@@ -181,35 +181,43 @@ export default function ResultCard({ data }:{ data:any }){
         </>
       )}
 
-      {/* TECHNICAL */}
-      {tab==='technical' && (
-        <>
-          <section>
-              <RedirectsCard url={data.finalUrl || data.url} />
-    <RobotsCard url={data.finalUrl || data.url} /> 
-            <h3 className="font-semibold mb-3">Technical Basics</h3>
-            <div className="kv">
-              <div className="k">Viewport</div><div className="v">{data.viewport || <i>—</i>}</div>
-              <div className="k">Lang</div><div className="v">{data.lang || <i>—</i>}</div>
-              <div className="k">Robots</div>
-              <div className="v">
-                {data.robotsMeta
-                  ? `${data.robotsMeta.index ? 'index' : 'noindex'}, ${data.robotsMeta.follow ? 'follow' : 'nofollow'}`
-                  : (data.robots || <i>—</i>)
-                }
-              </div>
-            </div>
-          </section>
-          {(data._issues?.length || data._warnings?.length) ? (
-            <section>
-              <h3 className="font-semibold mb-3">Findings (Technical)</h3>
-              <ul className="list-disc pl-6 space-y-1">
-                {(data._warnings||[]).filter((w:string)=>/canonical|viewport|lang|robots|render-blocking/i.test(w)).map((w:string, i:number)=>(<li key={'tw'+i} className="text-amber-700">⚠️ {w}</li>))}
-              </ul>
-            </section>
-          ) : null}
-        </>
-      )}
+    {/* TECHNICAL */}
+{tab === 'technical' && (
+  <>
+    <section>
+      <h3 className="font-semibold mb-3">Technical Basics</h3>
+      <div className="kv">
+        <div className="k">Viewport</div><div className="v">{data.viewport || <i>—</i>}</div>
+        <div className="k">Lang</div><div className="v">{data.lang || <i>—</i>}</div>
+        <div className="k">Robots</div>
+        <div className="v">
+          {data.robotsMeta
+            ? `${data.robotsMeta.index ? 'index' : 'noindex'}, ${data.robotsMeta.follow ? 'follow' : 'nofollow'}`
+            : (data.robots || <i>—</i>)}
+        </div>
+      </div>
+    </section>
+
+    {(data._issues?.length || data._warnings?.length) && (
+      <section>
+        <h3 className="font-semibold mb-3">Findings (Technical)</h3>
+        <ul className="list-disc pl-6 space-y-1">
+          {(data._warnings || [])
+            .filter((w: string) =>
+              /(canonical|viewport|lang|robots|render-?blocking|security|mixed\s*content|https?\b)/i.test(w)
+            )
+            .map((w: string, i: number) => (
+              <li key={'tw' + i} className="text-amber-700">⚠️ {w}</li>
+            ))}
+        </ul>
+      </section>
+    )}
+
+    <RedirectsCard url={data.finalUrl || data.url} />
+    <RobotsCard    url={data.finalUrl || data.url} />
+  </>
+)}
+
 
      {/* INDEXING */}
 {tab === 'indexing' && (
