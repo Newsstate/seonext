@@ -1,90 +1,87 @@
-import { NextRequest } from 'next/server';
-import got from 'got';
-import * as cheerio from 'cheerio';
+'use client';
+import React, { useState } from 'react';
 
-export const runtime = 'nodejs';
+type Scope = 'all'|'internal'|'external';
 
-function abs(base: URL, href?: string) {
-  if (!href) return undefined;
-  try { return new URL(href, base).toString(); } catch { return undefined; }
-}
+export default function LinkCheckerCard({ url }:{ url:string }) {
+  const [loading, setLoading] = useState(false);
+  const [scope, setScope] = useState<Scope>('all');
+  const [limit, setLimit] = useState(60);
+  const [data, setData] = useState<any|null>(null);
+  const [err, setErr] = useState<string|null>(null);
 
-function isSkippable(href: string) {
-  return !href || href.startsWith('#') || /^mailto:|^tel:|^javascript:/i.test(href);
-}
-
-async function headOrLightGet(url: string) {
-  try {
-    const h = await got(url, { method: 'HEAD', throwHttpErrors: false, timeout: { request: 12000 }, followRedirect: true });
-    return { status: h.statusCode, finalUrl: h.url };
-  } catch {
+  const run = async () => {
+    setLoading(true); setErr(null); setData(null);
     try {
-      const g = await got(url, { method: 'GET', headers: { Range: 'bytes=0-0' }, throwHttpErrors: false, timeout: { request: 12000 }, followRedirect: true });
-      return { status: g.statusCode, finalUrl: g.url };
-    } catch (e:any) {
-      return { status: 0, finalUrl: url, error: String(e.message || e) };
-    }
-  }
-}
+      const r = await fetch('/api/links', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ url, limit, scope })
+      });
+      const j = await r.json();
+      if (!j.ok) setErr(j.error || 'Failed'); else setData(j.data);
+    } catch(e:any) { setErr(String(e.message||e)); }
+    finally { setLoading(false); }
+  };
 
-export async function POST(req: NextRequest) {
-  try {
-    const { url, limit = 60, scope = 'all' } = await req.json() as { url: string; limit?: number; scope?: 'all'|'internal'|'external' };
-    if (!url) return new Response(JSON.stringify({ ok:false, error:'Missing url' }), { status:400 });
+  return (
+    <div className="card p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold">Link Checker</h3>
+        <div className="flex items-center gap-2">
+          <select className="input" value={scope} onChange={e=>setScope(e.target.value as Scope)}>
+            <option value="all">All</option>
+            <option value="internal">Internal</option>
+            <option value="external">External</option>
+          </select>
+          <input className="input w-24" type="number" min={10} max={200} value={limit}
+                 onChange={e=>setLimit(parseInt(e.target.value||'60',10))} />
+          <button className="btn" onClick={run} disabled={loading || !url}>
+            {loading ? 'Checking…' : 'Run'}
+          </button>
+        </div>
+      </div>
 
-    const base = new URL(url);
-    const r = await got(url, { timeout:{ request:15000 }, followRedirect: true, throwHttpErrors: false });
-    if (r.statusCode >= 400) return new Response(JSON.stringify({ ok:false, error:`${r.statusCode} on page` }), { status:200 });
+      {err && <div className="text-red-600 text-sm">{err}</div>}
 
-    const $ = cheerio.load(r.body);
-    const anchors: Array<{ url:string; text:string; rel:string; target?:string; type:'internal'|'external' }> = [];
+      {data && (
+        <>
+          <div className="kv">
+            <div className="k">Links on page</div><div className="v">{data.counts.totalOnPage}</div>
+            <div className="k">Checked</div><div className="v">{data.counts.checked}</div>
+            <div className="k">Internal / External</div><div className="v">{data.counts.internal} / {data.counts.external}</div>
+            <div className="k">Errors (4xx/5xx)</div><div className="v">{data.counts.errors}</div>
+          </div>
 
-    $('a[href]').each((_, el) => {
-      const href = String($(el).attr('href') || '').trim();
-      if (isSkippable(href)) return;
-      const u = abs(base, href);
-      if (!u) return;
-      const rel = String($(el).attr('rel') || '').toLowerCase();
-      const target = String($(el).attr('target') || '').toLowerCase() || undefined;
-      let type:'internal'|'external' = 'external';
-      try { type = new URL(u).origin === base.origin ? 'internal' : 'external'; } catch {}
-      const text = $(el).text().replace(/\s+/g,' ').trim().slice(0,120);
-      anchors.push({ url: u, text, rel, target, type });
-    });
-
-    // Filter & de-dupe
-    let list = anchors;
-    if (scope === 'internal') list = list.filter(a => a.type === 'internal');
-    if (scope === 'external') list = list.filter(a => a.type === 'external');
-    const seen = new Set<string>();
-    list = list.filter(a => (seen.has(a.url) ? false : (seen.add(a.url), true))).slice(0, limit);
-
-    const results = await Promise.all(list.map(async a => {
-      const head = await headOrLightGet(a.url);
-      const noopenerNeeded = a.type === 'external' && a.target === '_blank' && !/noopener|noreferrer/.test(a.rel);
-      const nofollow = /nofollow/.test(a.rel);
-      const ugc = /ugc/.test(a.rel);
-      const sponsored = /sponsored/.test(a.rel);
-      return {
-        ...a,
-        status: head.status,
-        finalUrl: head.finalUrl,
-        error: head.error,
-        nofollow, ugc, sponsored,
-        security: noopenerNeeded ? 'noopener-missing' : 'ok'
-      };
-    }));
-
-    const counts = {
-      totalOnPage: anchors.length,
-      checked: results.length,
-      internal: results.filter(r => r.type === 'internal').length,
-      external: results.filter(r => r.type === 'external').length,
-      errors: results.filter(r => r.status >= 400 || r.status === 0 || r.error).length
-    };
-
-    return new Response(JSON.stringify({ ok:true, data: { counts, results } }), { status:200, headers:{'content-type':'application/json'} });
-  } catch (e:any) {
-    return new Response(JSON.stringify({ ok:false, error:String(e.message||e) }), { status:500 });
-  }
+          <div className="overflow-x-auto">
+            <table className="table-pro">
+              <thead>
+                <tr>
+                  <th className="th-pro">Status</th>
+                  <th className="th-pro">Type</th>
+                  <th className="th-pro">rel</th>
+                  <th className="th-pro">target</th>
+                  <th className="th-pro">Security</th>
+                  <th className="th-pro">URL</th>
+                  <th className="th-pro">Anchor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.results.map((r:any, i:number)=>(
+                  <tr key={i} className={(r.status>=400 || r.error || r.security==='noopener-missing') ? 'text-amber-700' : ''}>
+                    <td className="td-pro">{r.error ? 'ERR' : (r.status ?? '—')}</td>
+                    <td className="td-pro">{r.type}</td>
+                    <td className="td-pro">{[r.nofollow?'nofollow':'', r.ugc?'ugc':'', r.sponsored?'sponsored':''].filter(Boolean).join(', ') || '—'}</td>
+                    <td className="td-pro">{r.target || '—'}</td>
+                    <td className="td-pro">{r.security==='noopener-missing' ? 'noopener missing' : 'ok'}</td>
+                    <td className="td-pro break-all">{r.finalUrl || r.url}</td>
+                    <td className="td-pro">{r.text || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
