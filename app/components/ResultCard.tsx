@@ -10,6 +10,8 @@ import RedirectsCard from './RedirectsCard';
 import RobotsCard from './RobotsCard';
 import HreflangCard from './HreflangCard';
 import CanonicalizeCard from './CanonicalizeCard';
+import ImageAuditCard from './ImageAuditCard';
+import AmpCard from './AmpCard';
 export default function ResultCard({ data }:{ data:any }){
   const [tab, setTab] = useState<string>('overview');
 
@@ -139,6 +141,11 @@ export default function ResultCard({ data }:{ data:any }){
             <pre className="code">{JSON.stringify(tw, null, 2)}</pre>
           </section>
           <section>
+             <section>
+            <h3 className="font-semibold mb-3">Images Audit</h3>
+               <ImageAuditCard url={data.finalUrl || data.url} />
+
+          </section>
             <h3 className="font-semibold mb-3">Schema Types</h3>
             <div>{(data.schemaTypes||[]).length ? data.schemaTypes.join(', ') : <i>—</i>}</div>
           </section>
@@ -215,7 +222,7 @@ export default function ResultCard({ data }:{ data:any }){
       </section>
     )}
     <CanonicalizeCard url={data.finalUrl || data.url} />
-
+    <AmpCard       url={data.finalUrl || data.url} />
     <RedirectsCard url={data.finalUrl || data.url} />
     <RobotsCard    url={data.finalUrl || data.url} />
   </>
