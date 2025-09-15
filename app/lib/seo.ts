@@ -1,6 +1,32 @@
 import * as cheerio from 'cheerio';
 
 /* ------------ types ------------ */
+
+export type MixedContent = {
+  total: number;
+  samples: string[]; // first few http:// resources found on https pages
+};
+
+export type ImageItem = {
+  src: string;
+  alt?: string;
+  width?: string;
+  height?: string;
+  loading?: string;
+};
+
+export type SEOResult = {
+  // …existing fields…
+  images: { total:number; missingAlt:number; missingDimensions:number; missingLoading:number };
+  imagesList?: ImageItem[];                // NEW
+  mixedContent?: MixedContent;             // NEW
+  canonicalFetch?: {                       // NEW (filled by /api/scan)
+    status?: number;
+    finalUrl?: string;
+  };
+  // …existing fields…
+};
+
 export type RobotsFlags = {
   raw?: string;
   index: boolean;
