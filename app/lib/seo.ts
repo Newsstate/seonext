@@ -15,18 +15,6 @@ export type ImageItem = {
   loading?: string;
 };
 
-export type SEOResult = {
-  // …existing fields…
-  images: { total:number; missingAlt:number; missingDimensions:number; missingLoading:number };
-  imagesList?: ImageItem[];                // NEW
-  mixedContent?: MixedContent;             // NEW
-  canonicalFetch?: {                       // NEW (filled by /api/scan)
-    status?: number;
-    finalUrl?: string;
-  };
-  // …existing fields…
-};
-
 export type RobotsFlags = {
   raw?: string;
   index: boolean;
@@ -42,7 +30,7 @@ export type RobotsFlags = {
 
 export type DupReport = {
   comparedUrl?: string;
-  similarity?: number;   // 0..1
+  similarity?: number;    // 0..1
   pageWords?: number;
   comparedWords?: number;
   risk?: 'low'|'medium'|'high';
@@ -74,6 +62,7 @@ export type SecurityHeaders = {
   permissionsPolicy: string | null;
 };
 
+// Consolidated and corrected SEOResult type
 export type SEOResult = {
   url: string;
   finalUrl?: string;
@@ -87,7 +76,7 @@ export type SEOResult = {
     xRobotsTag?: string;
     xPoweredBy?: string;
     server?: string;
-    security?: SecurityHeaders;        // NEW
+    security?: SecurityHeaders;
     scheme?: 'http'|'https';
   };
 
@@ -108,13 +97,19 @@ export type SEOResult = {
 
   h1Count: number;
   headings: { h2: number; h3: number };
-  headingsList?: Array<{ level: 'h1'|'h2'|'h3'; text: string }>;  // NEW (optional)
+  headingsList?: Array<{ level: 'h1'|'h2'|'h3'; text: string }>;
 
   hreflang: string[];
   hreflangMap: { lang: string; href: string }[];
   hreflangValidation: { duplicates: string[]; invalid: string[]; hasXDefault: boolean };
 
   images: { total:number; missingAlt:number; missingDimensions:number; missingLoading:number };
+  imagesList?: ImageItem[];
+  mixedContent?: MixedContent;
+  canonicalFetch?: {
+    status?: number;
+    finalUrl?: string;
+  };
 
   links: { total: number; internal: number; external: number; nofollow: number };
 
@@ -139,7 +134,7 @@ export type SEOResult = {
   duplication?: DupReport;
   score?: ScoreBreakdown;
 
-  contentStats?: ContentStats;           // NEW
+  contentStats?: ContentStats;
 
   _warnings: string[];
   _issues: string[];
@@ -166,11 +161,13 @@ function parseRobotsMeta(raw?: string): RobotsFlags {
   }
   return flags;
 }
+
 function isValidHreflang(v: string) {
   const lower = v.toLowerCase();
   if (lower === 'x-default') return true;
   return /^[a-z]{2,3}(-[a-z]{2})?$/.test(lower);
 }
+
 function abs(base: URL, href?: string) {
   if (!href) return undefined;
   try { return new URL(href, base).toString(); } catch { return href; }
@@ -193,6 +190,7 @@ function countSyllables(word: string) {
   const m = w.replace(/e\b/g,'').match(/[aeiouy]{1,2}/g);
   return Math.max(1, (m?.length || 0));
 }
+
 export function readabilityStats(text: string): ContentStats {
   const wordsArr = text.split(/\s+/).filter(Boolean);
   const words = wordsArr.length;
@@ -238,7 +236,7 @@ export function scoreFrom(result: SEOResult): ScoreBreakdown {
   if (result.canonicalStatus === 'multiple') { technical -= 20; notes.push('tech:canonical:multiple'); }
   if (result.canonicalStatus === 'missing') { technical -= 6; notes.push('tech:canonical:missing'); }
   if (result.http?.scheme === 'http') { technical -= 10; notes.push('tech:http:not-secure'); }
-  if (result.http?.security) { // Use optional chaining to safely access 'security'
+  if (result.http?.security) {
     const sec = result.http.security;
     if (!sec.hsts && result.http.scheme === 'https') { technical -= 3; notes.push('tech:security:hsts'); }
     if (!sec.csp) { technical -= 3; notes.push('tech:security:csp'); }
@@ -308,7 +306,7 @@ export function jaccard(a: string, b: string) {
   return inter / (A.size + B.size - inter);
 }
 
-/* --- main parser (unchanged logic + small extras) --- */
+/* --- main parser --- */
 export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<string, any>, respStatus?: number): SEOResult {
   const $ = cheerio.load(html);
   const urlObj = new URL(baseUrl);
@@ -397,7 +395,7 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
   const h3Count = $('h3').length;
   const headingsList: Array<{level:'h1'|'h2'|'h3'; text:string}> = [];
   $('h1,h2,h3').each((_, el)=>{
-    const $el = $(el); // Use the existing cheerio instance for efficiency
+    const $el = $(el);
     const tag = (el.tagName as 'h1'|'h2'|'h3');
     headingsList.push({ level: tag, text: $el.text().trim().slice(0,200) });
   });
@@ -413,7 +411,7 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
   let hasXDefault = false;
   const seen = new Set<string>();
   $('link[rel="alternate"][hreflang]').each((_, el) => {
-    const $el = $(el); // Use the existing cheerio instance
+    const $el = $(el);
     const v = String($el.attr('hreflang') || '').trim();
     const href = String($el.attr('href') || '').trim();
     if (!v) return;
@@ -427,32 +425,38 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
   if (invalid.length) warnings.push(`Invalid hreflang values: ${invalid.join(', ')}`);
 
   // Images
- // Images
-const imgs = $('img');
-let missingAlt = 0, missingDim = 0, missingLoading = 0;
-const imagesList: ImageItem[] = [];
-imgs.each((_, el) => {
-  const $el: any = cheerio.load(el)(el);
-  const alt = ($el.attribs?.alt||'').trim();
-  const width = ($el.attribs?.width||'').trim();
-  const height = ($el.attribs?.height||'').trim();
-  const loading = ($el.attribs?.loading||'').trim().toLowerCase();
-  const src = ($el.attribs?.src||'').trim();
+  const imgs = $('img');
+  let missingAlt = 0, missingDim = 0, missingLoading = 0;
+  const imagesList: ImageItem[] = [];
+  imgs.each((_, el) => {
+    const $el = $(el); // Use existing cheerio instance
+    const src = String($el.attr('src') || '').trim();
+    if (!src) return;
+    const alt = String($el.attr('alt') || '').trim();
+    const width = String($el.attr('width') || '').trim();
+    const height = String($el.attr('height') || '').trim();
+    const loading = String($el.attr('loading') || '').trim().toLowerCase();
 
-  if (!alt) missingAlt++;
-  if (!width || !height) missingDim++;
-  if (loading && loading !== 'lazy') missingLoading++;
+    if (!alt) missingAlt++;
+    if (!width || !height) missingDim++;
+    if (loading !== 'lazy') missingLoading++; // Corrected logic: count if not explicitly set to lazy
 
-  if (src) imagesList.push({ src: abs(urlObj, src)!, alt, width, height, loading });
-});
-if (missingAlt > 0) warnings.push(`${missingAlt} images missing alt.`);
-if (missingDim > 0) warnings.push(`${missingDim} images missing explicit width/height.`);
-
+    imagesList.push({
+      src: abs(urlObj, src)!,
+      alt: alt || undefined,
+      width: width || undefined,
+      height: height || undefined,
+      loading: loading || undefined
+    });
+  });
+  if (missingAlt > 0) warnings.push(`${missingAlt} images missing alt.`);
+  if (missingDim > 0) warnings.push(`${missingDim} images missing explicit width/height.`);
+  if (missingLoading > 0) warnings.push(`${missingLoading} images not using lazy loading.`);
 
   // Links
   const anchors = $('a[href]'); let internal = 0, external = 0, nofollow = 0;
   anchors.each((_, el) => {
-    const $a = $(el); // Use the existing cheerio instance
+    const $a = $(el);
     const href = String($a.attr('href') || '').trim(); if (!href) return;
     const rel = String($a.attr('rel') || '').toLowerCase(); if (rel.includes('nofollow')) nofollow++;
     try { const u = new URL(href, urlObj.origin);
@@ -461,32 +465,32 @@ if (missingDim > 0) warnings.push(`${missingDim} images missing explicit width/h
   });
   if ((anchors.length || 0) > 300) warnings.push('Large number of links on page (>300).');
 
-
   // Mixed content (only relevant if page is HTTPS)
-let mixedCount = 0;
-const mixedSamples: string[] = [];
-if (urlObj.protocol === 'https:') {
-  const collect = (sel: string, attr: 'href'|'src') => {
-    $(sel).each((_, el) => {
-      const v = String(cheerio.load(el)(el).attr(attr) || '').trim();
-      if (!v) return;
-      try {
-        const u = new URL(v, urlObj);
-        if (u.protocol === 'http:') {
-          mixedCount++;
-          if (mixedSamples.length < 5) mixedSamples.push(u.toString());
-        }
-      } catch { /* ignore */ }
-    });
-  };
-  collect('img[src]', 'src');
-  collect('script[src]', 'src');
-  collect('link[href]', 'href');
-  collect('video[src], audio[src], source[src], iframe[src]', 'src');
-  if (mixedCount > 0) {
-    warnings.push(`Mixed content on HTTPS page (${mixedCount} http resources).`);
+  let mixedCount = 0;
+  const mixedSamples: string[] = [];
+  if (urlObj.protocol === 'https:') {
+    const collect = (sel: string, attr: 'href'|'src') => {
+      $(sel).each((_, el) => {
+        const $el = $(el); // Use existing cheerio instance
+        const v = String($el.attr(attr) || '').trim();
+        if (!v) return;
+        try {
+          const u = new URL(v, urlObj);
+          if (u.protocol === 'http:') {
+            mixedCount++;
+            if (mixedSamples.length < 5) mixedSamples.push(u.toString());
+          }
+        } catch { /* ignore */ }
+      });
+    };
+    collect('img[src]', 'src');
+    collect('script[src]', 'src');
+    collect('link[href]', 'href');
+    collect('video[src], audio[src], source[src], iframe[src]', 'src');
+    if (mixedCount > 0) {
+      warnings.push(`Mixed content on HTTPS page (${mixedCount} http resources).`);
+    }
   }
-}
 
   // Resource hints / render blocking
   const resourceHints = {
@@ -496,20 +500,18 @@ if (urlObj.protocol === 'https:') {
   };
   let blockingCSS = 0, blockingHeadScripts = 0, totalScripts = $('script').length;
   $('link[rel="stylesheet"]').each((_, el)=>{
-    const $el = $(el); // Use the existing cheerio instance
+    const $el = $(el);
     const rel = String($el.attr('rel')||'').toLowerCase();
     const media = String($el.attr('media')||'').trim();
     const disabled = $el.attr('disabled') !== undefined;
     if (rel === 'stylesheet' && !media && !disabled) blockingCSS++;
   });
-$('head script[src]').each((_, el)=>{
-  // Fix: Provide a default empty object in case the .attr() call returns undefined.
-  // This prevents the 'a' is possibly 'undefined' type error.
-  const a = $(el).attr() || {};
-  if (!('async' in a) && !('defer' in a)) blockingHeadScripts++;
-});
-if (blockingCSS > 3) warnings.push(`Many render-blocking stylesheets (${blockingCSS}).`);
-if (blockingHeadScripts > 0) warnings.push(`Render-blocking scripts in <head> (${blockingHeadScripts}).`);
+  $('head script[src]').each((_, el)=>{
+    const a = $(el).attr() || {};
+    if (!('async' in a) && !('defer' in a)) blockingHeadScripts++;
+  });
+  if (blockingCSS > 3) warnings.push(`Many render-blocking stylesheets (${blockingCSS}).`);
+  if (blockingHeadScripts > 0) warnings.push(`Render-blocking scripts in <head> (${blockingHeadScripts}).`);
 
   // Icons / PWA / AMP
   const favicon = abs(urlObj, $('link[rel="icon"]').attr('href') || $('link[rel="shortcut icon"]').attr('href'));
@@ -520,14 +522,14 @@ if (blockingHeadScripts > 0) warnings.push(`Render-blocking scripts in <head> ($
   // Social
   const og: Record<string,string> = {};
   $('meta[property^="og:"]').each((_, el) => {
-    const $el = $(el); // Use the existing cheerio instance
+    const $el = $(el);
     const key = String($el.attr('property')||'').toLowerCase();
     const val = String($el.attr('content')||'').trim();
     if (key) og[key] = val;
   });
   const twitter: Record<string,string> = {};
   $('meta[name^="twitter:"]').each((_, el) => {
-    const $el = $(el); // Use the existing cheerio instance
+    const $el = $(el);
     const key = String($el.attr('name')||'').toLowerCase();
     const val = String($el.attr('content')||'').trim();
     if (key) twitter[key] = val;
@@ -560,7 +562,7 @@ if (blockingHeadScripts > 0) warnings.push(`Render-blocking scripts in <head> ($
     }
   };
   $('script[type="application/ld+json"]').each((_, el) => { try {
-    const txt = $(el).text(); // Use the existing cheerio instance
+    const txt = $(el).text();
     if (txt) dig(JSON.parse(txt));
   } catch {} });
 
@@ -581,7 +583,8 @@ if (blockingHeadScripts > 0) warnings.push(`Render-blocking scripts in <head> ($
     hreflangMap,
     hreflangValidation: { duplicates, invalid, hasXDefault },
     images: { total: imgs.length, missingAlt, missingDimensions: missingDim, missingLoading },
-    mixedContent: mixedCount ? { total: mixedCount, samples: mixedSamples } : { total: 0, samples: [] }, // NEW
+    imagesList,
+    mixedContent: mixedCount ? { total: mixedCount, samples: mixedSamples } : undefined, // Set to undefined if no mixed content
     links: { total: anchors.length, internal, external, nofollow },
     resourceHints,
     renderBlocking: { stylesheets: blockingCSS, scriptsHeadBlocking: blockingHeadScripts, scriptsTotal: totalScripts },
