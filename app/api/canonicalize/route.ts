@@ -3,12 +3,13 @@ import got from 'got';
 export const runtime = 'nodejs';
 
 function variants(u: URL) {
-  const host = u.hostname.replace(/^www\./i,'');
+  const host = u.hostname.replace(/^www\./i, '');
+  const pathq = u.pathname + u.search;
   return [
-    new URL(u.pathname + u.search, `http://${host}`),
-    new URL(u.pathname + u.search, `https://${host}`),
-    new URL(u.pathname + u.search, `http://www.${host}`),
-    new URL(u.pathname + u.search, `https://www.${host}`)
+    new URL(pathq, `http://${host}`),
+    new URL(pathq, `https://${host}`),
+    new URL(pathq, `http://www.${host}`),
+    new URL(pathq, `https://www.${host}`)
   ];
 }
 
@@ -17,8 +18,8 @@ export async function POST(req: NextRequest) {
     const { url } = await req.json();
     const base = new URL(url);
     const list = variants(base);
-    const ua = 'Mozilla/5.0 (compatible; SEOMagic/1.3; +https://example.com)';
-    const out = [];
+    const ua = 'Mozilla/5.0 (compatible; SEOMagic/1.3)';
+    const out:any[] = [];
     for (const v of list) {
       try {
         const r = await got(v.toString(), { followRedirect: true, throwHttpErrors:false, timeout:{request:12000}, headers:{'user-agent':ua} });
