@@ -13,6 +13,8 @@ import CanonicalizeCard from "./CanonicalizeCard";
 import ImageAuditCard from "./ImageAuditCard";
 import HeadersCard from "./HeadersCard";
 import AmpCard from "./AmpCard";
+import RenderCompareCard from './RenderCompareCard';
+
 
 export default function ResultCard({ data }: { data: any }) {
   const [tab, setTab] = useState<string>("overview");
@@ -297,6 +299,7 @@ export default function ResultCard({ data }: { data: any }) {
           </section>
 
           <CanonicalizeCard url={data.finalUrl || data.url} />
+          <RenderCompareCard url={u} />
           <AmpCard url={data.finalUrl || data.url} />
           <RedirectsCard url={data.finalUrl || data.url} />
           <RobotsCard url={data.finalUrl || data.url} />
