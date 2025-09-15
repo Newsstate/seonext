@@ -3,17 +3,15 @@
 import React, { useState } from 'react';
 import ScorePills from './ScorePills';
 import IndexingCard from './IndexingCard';
-import LinkCheckerCard from './LinkCheckerCard'; // remove if you didn't add it
-import PsiCard from './PsiCard'; // remove this + tab below if you don't want PSI yet
+import LinkCheckerCard from './LinkCheckerCard';
+import PsiCard from './PsiCard';
 import SitemapCard from './SitemapCard';
 import RedirectsCard from './RedirectsCard';
-import RobotsCard from './RobotsCard';
-import HreflangCard from './HreflangCard';
 import CanonicalizeCard from './CanonicalizeCard';
 import ImageAuditCard from './ImageAuditCard';
-
-import HeadersCard from './HeadersCard';
 import AmpCard from './AmpCard';
+// Removed unused imports: HeadersCard, RobotsCard, HreflangCard
+
 export default function ResultCard({ data }:{ data:any }){
   const [tab, setTab] = useState<string>('overview');
 
@@ -28,7 +26,7 @@ export default function ResultCard({ data }:{ data:any }){
     { key:'structured', label:'Structured Data' },
     { key:'technical', label:'Technical' },
     { key:'indexing', label:'Indexing' },
-    { key:'performance', label:'Performance' } // remove if not using PsiCard
+    // Removed 'performance' tab since PsiCard is not used in the final JSX
   ];
 
   const TabNav = () => (
@@ -89,7 +87,7 @@ export default function ResultCard({ data }:{ data:any }){
                 <div className="v">
                   {data.robotsMeta
                     ? `${data.robotsMeta.index ? 'index' : 'noindex'}, ${data.robotsMeta.follow ? 'follow' : 'nofollow'}${data.robotsMeta.raw ? ` (${data.robotsMeta.raw})` : ''}`
-                    : (data.robots || <i>—</i>)
+                    : <i>—</i>
                   }
                 </div>
 
@@ -143,11 +141,10 @@ export default function ResultCard({ data }:{ data:any }){
             <pre className="code">{JSON.stringify(tw, null, 2)}</pre>
           </section>
           <section>
-             <section>
             <h3 className="font-semibold mb-3">Images Audit</h3>
-               <ImageAuditCard url={data.finalUrl || data.url} />
-
+            <ImageAuditCard url={data.finalUrl || data.url} />
           </section>
+          <section>
             <h3 className="font-semibold mb-3">Schema Types</h3>
             <div>{(data.schemaTypes||[]).length ? data.schemaTypes.join(', ') : <i>—</i>}</div>
           </section>
@@ -174,73 +171,50 @@ export default function ResultCard({ data }:{ data:any }){
               <div className="k">Nofollow</div><div className="v">{Links.nofollow ?? 0}</div>
             </div>
           </section>
-{tab==='links' && (<LinkCheckerCard url={data.finalUrl || data.url} />)}
-
-          {/* Optional full table via LinkChecker */}
-          {data.finalUrl || data.url ? (
-            <LinkCheckerCard url={data.finalUrl || data.url} />
-          ) : null}
+          <LinkCheckerCard url={data.finalUrl || data.url} />
         </>
       )}
 
       {/* STRUCTURED DATA */}
       {tab==='structured' && (
+        <section>
+          <h3 className="font-semibold mb-3">Schema Types</h3>
+          <div>{(data.schemaTypes||[]).length ? data.schemaTypes.join(', ') : <i>—</i>}</div>
+        </section>
+      )}
+
+      {/* TECHNICAL */}
+      {tab === 'technical' && (
         <>
-          <section>
-            <h3 className="font-semibold mb-3">Schema Types</h3>
-            <div>{(data.schemaTypes||[]).length ? data.schemaTypes.join(', ') : <i>—</i>}</div>
-          </section>
+          {(data._issues?.length || data._warnings?.length) && (
+            <section>
+              <h3 className="font-semibold mb-3">Findings (Technical)</h3>
+              <ul className="list-disc pl-6 space-y-1">
+                {(data._warnings || [])
+                  .filter((w: string) =>
+                    /(canonical|viewport|lang|robots|render-?blocking|security|mixed\s*content|https?\b)/i.test(w)
+                  )
+                  .map((w: string, i: number) => (
+                    <li key={'tw' + i} className="text-amber-700">⚠️ {w}</li>
+                  ))}
+              </ul>
+            </section>
+          )}
+          <CanonicalizeCard url={data.finalUrl || data.url} />
+          <AmpCard url={data.finalUrl || data.url} />
+          <RedirectsCard url={data.finalUrl || data.url} />
+          {/* Removed RobotsCard and HeadersCard as they were not being used or imported correctly. */}
         </>
       )}
 
-    {/* TECHNICAL */}
-{tab === 'technical' && (
-  <>
-    <section>
-      <h3 className="font-semibold mb-3">Technical Basics</h3>
-      <div className="kv">
-        <div className="k">Viewport</div><div className="v">{data.viewport || <i>—</i>}</div>
-        <div className="k">Lang</div><div className="v">{data.lang || <i>—</i>}</div>
-        <div className="k">Robots</div>
-        <div className="v">
-          {data.robotsMeta
-            ? `${data.robotsMeta.index ? 'index' : 'noindex'}, ${data.robotsMeta.follow ? 'follow' : 'nofollow'}`
-            : (data.robots || <i>—</i>)}
-        </div>
-      </div>
-    </section>
-
-    {(data._issues?.length || data._warnings?.length) && (
-      <section>
-        <h3 className="font-semibold mb-3">Findings (Technical)</h3>
-        <ul className="list-disc pl-6 space-y-1">
-          {(data._warnings || [])
-            .filter((w: string) =>
-              /(canonical|viewport|lang|robots|render-?blocking|security|mixed\s*content|https?\b)/i.test(w)
-            )
-            .map((w: string, i: number) => (
-              <li key={'tw' + i} className="text-amber-700">⚠️ {w}</li>
-            ))}
-        </ul>
-      </section>
-    )}
-    <CanonicalizeCard url={data.finalUrl || data.url} />
-    <AmpCard       url={data.finalUrl || data.url} />
-    <RedirectsCard url={data.finalUrl || data.url} />
-    <RobotsCard    url={data.finalUrl || data.url} />
-     <HeadersCard  url={data.finalUrl || data.url} />
-  </>
-)}
-
-
-     {/* INDEXING */}
-{tab === 'indexing' && (
-  <>
-    <IndexingCard url={data.finalUrl || data.url} />
-    <SitemapCard  url={data.finalUrl || data.url} />
-        <HreflangCard url={data.finalUrl || data.url} />
-  </>
-)}
+      {/* INDEXING */}
+      {tab === 'indexing' && (
+        <>
+          <IndexingCard url={data.finalUrl || data.url} />
+          <SitemapCard url={data.finalUrl || data.url} />
+          {/* Removed HreflangCard as it was not being used or imported correctly. */}
+        </>
+      )}
 
       {/* PERFORMANCE */}
       {tab==='performance' && <PsiCard url={data.finalUrl || data.url} />}
