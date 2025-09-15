@@ -1,53 +1,31 @@
 "use client";
 
 import React, { useState } from "react";
-
 import ScorePills from "./ScorePills";
-
 import IndexingCard from "./IndexingCard";
-
 import LinkCheckerCard from "./LinkCheckerCard"; // remove if you didn't add it
-
 import PsiCard from "./PsiCard"; // remove this + tab below if you don't want PSI yet
-
 import SitemapCard from "./SitemapCard";
-
 import RedirectsCard from "./RedirectsCard";
-
 import RobotsCard from "./RobotsCard";
-
 import HreflangCard from "./HreflangCard";
-
 import CanonicalizeCard from "./CanonicalizeCard";
-
 import ImageAuditCard from "./ImageAuditCard";
-
 import HeadersCard from "./HeadersCard";
-
 import AmpCard from "./AmpCard";
 
 export default function ResultCard({ data }: { data: any }) {
   const [tab, setTab] = useState<string>("overview");
-
   const Links = data.links || {};
-
   const og = data.og || {};
-
   const tw = data.twitter || {};
-
   const tabs = [
     { key: "overview", label: "Overview" },
-
     { key: "content", label: "Content" },
-
     { key: "links", label: "Links" },
-
     { key: "structured", label: "Structured Data" },
-
     { key: "technical", label: "Technical" },
-
     { key: "indexing", label: "Indexing" },
-
     { key: "performance", label: "Performance" }, // remove if not using PsiCard
   ];
 
