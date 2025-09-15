@@ -211,9 +211,13 @@ export default function ResultCard({ data }:{ data:any }){
         </>
       )}
 
-      {/* INDEXING */}
-      {tab==='indexing' && <IndexingCard url={data.finalUrl || data.url} />}
-    <SitemapCard url={data.finalUrl || data.url} />
+     {/* INDEXING */}
+{tab === 'indexing' && (
+  <>
+    <IndexingCard url={data.finalUrl || data.url} />
+    <SitemapCard  url={data.finalUrl || data.url} />
+  </>
+)}
 
       {/* PERFORMANCE */}
       {tab==='performance' && <PsiCard url={data.finalUrl || data.url} />}
