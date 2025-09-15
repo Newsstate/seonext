@@ -13,7 +13,8 @@ export default function RenderCompareCard({ url }:{ url:string }) {
     diffs: DiffRow[];
   }>(null);
 
-  const [waitUntil, setWaitUntil] = useState<'domcontentloaded'|'networkidle0'|'load'>('networkidle0');
+  const [waitUntil, setWaitUntil] =
+    useState<'domcontentloaded'|'networkidle0'|'networkidle2'|'load'>('networkidle0');
 
   const run = async () => {
     setLoading(true); setErr(null); setRes(null);
@@ -45,6 +46,7 @@ export default function RenderCompareCard({ url }:{ url:string }) {
             <option value="domcontentloaded">domcontentloaded</option>
             <option value="load">load</option>
             <option value="networkidle0">networkidle0</option>
+            <option value="networkidle2">networkidle2</option>
           </select>
           <button className="btn" onClick={run} disabled={loading || !url}>
             {loading ? 'Comparing…' : 'Run'}
@@ -59,22 +61,17 @@ export default function RenderCompareCard({ url }:{ url:string }) {
           <div className="kv">
             <div className="k">No-JS URL</div><div className="v break-all">{res.noJs.url}</div>
             <div className="k">Rendered URL</div><div className="v break-all">{res.rendered.url}</div>
-
             <div className="k">No-JS Status</div><div className="v">{res.noJs.status ?? '—'}</div>
             <div className="k">Rendered Status</div><div className="v">{res.rendered.status ?? '—'}</div>
-
             <div className="k">No-JS DOM size</div><div className="v">{res.noJs.domSize}</div>
             <div className="k">Rendered DOM size</div><div className="v">{res.rendered.domSize} (Δ {res.summary.domDelta>=0?'+':''}{res.summary.domDelta})</div>
-
             <div className="k">No-JS words</div><div className="v">{res.noJs.words}</div>
             <div className="k">Rendered words</div><div className="v">{res.rendered.words} (Δ {res.summary.wordsDelta>=0?'+':''}{res.summary.wordsDelta})</div>
-
             <div className="k">Text similarity</div>
             <div className="v">
               {res.summary.textSimilarity.toFixed(3)}
               <Badge ok={res.summary.textSimilarity >= 0.85} yes="High" no="Low" />
             </div>
-
             <div className="k">Changed fields</div><div className="v">{res.summary.keyChangesCount}</div>
           </div>
 
