@@ -6,68 +6,84 @@ export const runtime = 'nodejs';
 
 function abs(base: URL, href?: string) {
   if (!href) return undefined;
-  try { return new URL(href, base).toString(); } catch { return href; }
+  try { return new URL(href, base).toString(); } catch { return undefined; }
+}
+
+function isSkippable(href: string) {
+  return !href || href.startsWith('#') || /^mailto:|^tel:|^javascript:/i.test(href);
+}
+
+async function headOrLightGet(url: string) {
+  try {
+    const h = await got(url, { method: 'HEAD', throwHttpErrors: false, timeout: { request: 12000 }, followRedirect: true });
+    return { status: h.statusCode, finalUrl: h.url };
+  } catch {
+    try {
+      const g = await got(url, { method: 'GET', headers: { Range: 'bytes=0-0' }, throwHttpErrors: false, timeout: { request: 12000 }, followRedirect: true });
+      return { status: g.statusCode, finalUrl: g.url };
+    } catch (e:any) {
+      return { status: 0, finalUrl: url, error: String(e.message || e) };
+    }
+  }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { url, limit = 150 } = await req.json();
+    const { url, limit = 60, scope = 'all' } = await req.json() as { url: string; limit?: number; scope?: 'all'|'internal'|'external' };
     if (!url) return new Response(JSON.stringify({ ok:false, error:'Missing url' }), { status:400 });
 
     const base = new URL(url);
-    const ua = 'Mozilla/5.0 (compatible; SEOMagic/1.5)';
-    const page = await got(url, { followRedirect: true, headers:{'user-agent': ua}, timeout:{ request: 15000 }, throwHttpErrors: false });
+    const r = await got(url, { timeout:{ request:15000 }, followRedirect: true, throwHttpErrors: false });
+    if (r.statusCode >= 400) return new Response(JSON.stringify({ ok:false, error:`${r.statusCode} on page` }), { status:200 });
 
-    const $ = cheerio.load(page.body);
-    const anchors: Array<{ href:string; text:string; rel:string; target:string }> = [];
-    $('a[href]').each((_, el)=>{
+    const $ = cheerio.load(r.body);
+    const anchors: Array<{ url:string; text:string; rel:string; target?:string; type:'internal'|'external' }> = [];
+
+    $('a[href]').each((_, el) => {
       const href = String($(el).attr('href') || '').trim();
-      if (!href || href.startsWith('#') || /^mailto:|^tel:|^javascript:/i.test(href)) return;
-      anchors.push({
-        href: abs(base, href)!,
-        text: $(el).text().trim().slice(0,120),
-        rel: String($(el).attr('rel') || '').toLowerCase(),
-        target: String($(el).attr('target') || '')
-      });
+      if (isSkippable(href)) return;
+      const u = abs(base, href);
+      if (!u) return;
+      const rel = String($(el).attr('rel') || '').toLowerCase();
+      const target = String($(el).attr('target') || '').toLowerCase() || undefined;
+      let type:'internal'|'external' = 'external';
+      try { type = new URL(u).origin === base.origin ? 'internal' : 'external'; } catch {}
+      const text = $(el).text().replace(/\s+/g,' ').trim().slice(0,120);
+      anchors.push({ url: u, text, rel, target, type });
     });
 
-    // dedupe by href
+    // Filter & de-dupe
+    let list = anchors;
+    if (scope === 'internal') list = list.filter(a => a.type === 'internal');
+    if (scope === 'external') list = list.filter(a => a.type === 'external');
     const seen = new Set<string>();
-    const uniq = anchors.filter(a => { if (seen.has(a.href)) return false; seen.add(a.href); return true; }).slice(0, limit);
+    list = list.filter(a => (seen.has(a.url) ? false : (seen.add(a.url), true))).slice(0, limit);
 
-    const rows:any[] = [];
-    for (const a of uniq) {
-      let status: number | null = null;
-      let finalUrl: string | null = null;
-      let error: string | null = null;
-      try {
-        const head = await got(a.href, { method:'HEAD', followRedirect: true, throwHttpErrors: false, timeout:{ request: 12000 } });
-        status = head.statusCode;
-        finalUrl = head.url;
-      } catch (e:any) {
-        error = String(e.message || e);
-      }
-      const isExternal = (() => {
-        try { return new URL(a.href).origin !== base.origin; } catch { return false; }
-      })();
-      const hasNoopener = a.rel.includes('noopener') || a.rel.includes('noreferrer');
-      rows.push({
-        url: a.href,
-        text: a.text,
-        status,
-        finalUrl,
-        error,
-        internal: !isExternal,
-        external: isExternal,
-        nofollow: a.rel.includes('nofollow'),
-        targetBlank: a.target === '_blank',
-        targetBlankUnsafe: a.target === '_blank' && !hasNoopener
-      });
-    }
+    const results = await Promise.all(list.map(async a => {
+      const head = await headOrLightGet(a.url);
+      const noopenerNeeded = a.type === 'external' && a.target === '_blank' && !/noopener|noreferrer/.test(a.rel);
+      const nofollow = /nofollow/.test(a.rel);
+      const ugc = /ugc/.test(a.rel);
+      const sponsored = /sponsored/.test(a.rel);
+      return {
+        ...a,
+        status: head.status,
+        finalUrl: head.finalUrl,
+        error: head.error,
+        nofollow, ugc, sponsored,
+        security: noopenerNeeded ? 'noopener-missing' : 'ok'
+      };
+    }));
 
-    return new Response(JSON.stringify({ ok:true, data:{ count: rows.length, rows } }), {
-      status:200, headers:{ 'content-type':'application/json' }
-    });
+    const counts = {
+      totalOnPage: anchors.length,
+      checked: results.length,
+      internal: results.filter(r => r.type === 'internal').length,
+      external: results.filter(r => r.type === 'external').length,
+      errors: results.filter(r => r.status >= 400 || r.status === 0 || r.error).length
+    };
+
+    return new Response(JSON.stringify({ ok:true, data: { counts, results } }), { status:200, headers:{'content-type':'application/json'} });
   } catch (e:any) {
     return new Response(JSON.stringify({ ok:false, error:String(e.message||e) }), { status:500 });
   }
