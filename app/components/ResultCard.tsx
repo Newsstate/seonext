@@ -299,7 +299,7 @@ export default function ResultCard({ data }: { data: any }) {
           </section>
 
           <CanonicalizeCard url={data.finalUrl || data.url} />
-          <RenderCompareCard url={u} />
+         <RenderCompareCard url={data.finalUrl || data.url} />
           <AmpCard url={data.finalUrl || data.url} />
           <RedirectsCard url={data.finalUrl || data.url} />
           <RobotsCard url={data.finalUrl || data.url} />
