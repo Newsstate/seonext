@@ -7,13 +7,11 @@ import puppeteer from 'puppeteer-core';
 import { parseSEO, extractMainText, jaccard } from '@/lib/seo';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 type DiffRow = { key: string; a: any; b: any; same: boolean };
 
-function domSize(html: string) {
-  const $ = cheerio.load(html);
-  return $('*').length;
-}
 const norm = (s?: string | null) => (s || '').trim();
 const asSet = (arr?: string[]) => new Set((arr || []).map(String));
 const sameSet = (a?: string[], b?: string[]) => {
@@ -22,6 +20,7 @@ const sameSet = (a?: string[], b?: string[]) => {
   for (const x of A) if (!B.has(x)) return false;
   return true;
 };
+const domSize = (html: string) => cheerio.load(html)('*').length;
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,26 +31,39 @@ export async function POST(req: NextRequest) {
         renderTimeoutMs?: number;
       };
 
-    if (!url) return new Response(JSON.stringify({ ok: false, error: 'Missing url' }), { status: 400 });
+    if (!url) {
+      return new Response(JSON.stringify({ ok: false, error: 'Missing url' }), { status: 400 });
+    }
 
-    // --- No-JS fetch ---
-    const baseResp = await got(url, { followRedirect: true, throwHttpErrors: false, timeout: { request: 20000 } });
+    // ---- No-JS fetch (origin HTML) ----
+    const baseResp = await got(url, {
+      followRedirect: true,
+      throwHttpErrors: false,
+      timeout: { request: 20000 },
+    });
     if (baseResp.statusCode >= 400) {
       return new Response(JSON.stringify({ ok: false, error: `Source returned ${baseResp.statusCode}` }), { status: 200 });
     }
-    const noJsUrl = baseResp.url;
+    const noJsUrl  = baseResp.url;
     const noJsHtml = baseResp.body;
-    const noJsSEO = parseSEO(noJsHtml, noJsUrl, baseResp.headers as any, baseResp.statusCode);
+    const noJsSEO  = parseSEO(noJsHtml, noJsUrl, baseResp.headers as any, baseResp.statusCode);
     const noJsText = extractMainText(noJsHtml).text;
-    const noJsDom = domSize(noJsHtml);
+    const noJsDom  = domSize(noJsHtml);
+    const noJsWords = noJsSEO.contentStats?.words ?? extractMainText(noJsHtml).words;
 
-    // --- JS-rendered fetch (headless) ---
-    const executablePath = await chromium.executablePath();
+    // ---- JS-rendered HTML (headless) ----
+    let executablePath = await chromium.executablePath();
+    // Local fallback (DO NOT set any CHROME_PATH on Vercel)
+    if (!executablePath && (process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH)) {
+      executablePath = process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH!;
+    }
+
     const browser = await puppeteer.launch({
       args: chromium.args,
       executablePath,
       headless: chromium.headless ?? true,
     });
+
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
     await page.setUserAgent(
@@ -59,24 +71,24 @@ export async function POST(req: NextRequest) {
     );
 
     const resp = await page.goto(url, { waitUntil, timeout: renderTimeoutMs });
-
-    // Tiny settle; `waitForTimeout` isn’t typed on your Page — use a Node delay
+    // tiny settle delay (cross-version safe)
     await new Promise(res => setTimeout(res, 300));
 
-    const renderedHtml = await page.content();
-    const renderedUrl = page.url();
-    const renderedStatus = resp?.status();
+    const renderedHtml    = await page.content();
+    const renderedUrl     = page.url();
+    const renderedStatus  = resp?.status();
     const renderedHeaders = (await resp?.headers()) || {};
     await browser.close();
 
-    const renderedSEO = parseSEO(renderedHtml, renderedUrl, renderedHeaders as any, renderedStatus);
-    const renderedText = extractMainText(renderedHtml).text;
-    const renderedDom = domSize(renderedHtml);
+    const renderedSEO   = parseSEO(renderedHtml, renderedUrl, renderedHeaders as any, renderedStatus);
+    const renderedText  = extractMainText(renderedHtml).text;
+    const renderedDom   = domSize(renderedHtml);
+    const renderedWords = renderedSEO.contentStats?.words ?? extractMainText(renderedHtml).words;
 
-    // --- Diffs ---
+    // ---- Diffs ----
     const diffs: DiffRow[] = [];
-    const push = (key: string, a: any, b: any, cmp?: (a: any, b: any) => boolean) => {
-      const same = cmp ? cmp(a, b) : (JSON.stringify(a) === JSON.stringify(b));
+    const push = (key: string, a: any, b: any, cmp?: (a:any,b:any)=>boolean) => {
+      const same = cmp ? cmp(a,b) : (JSON.stringify(a) === JSON.stringify(b));
       diffs.push({ key, a, b, same });
     };
 
@@ -115,15 +127,12 @@ export async function POST(req: NextRequest) {
     push('http.contentType', noJsSEO.http?.contentType ?? null, renderedSEO.http?.contentType ?? null);
     push('http.xRobotsTag', noJsSEO.http?.xRobotsTag ?? null, renderedSEO.http?.xRobotsTag ?? null);
 
-    // Hreflang
+    // Hreflang (compare by lang:href)
     const mapList = (m?: Array<{ lang: string; href: string }>) => (m || []).map(x => `${x.lang}:${x.href}`);
     push('hreflang.map', mapList(noJsSEO.hreflangMap), mapList(renderedSEO.hreflangMap), sameSet);
 
     // Content stats + similarity
-    const noJsWords = noJsSEO.contentStats?.words ?? extractMainText(noJsHtml).words;
-    const renderedWords = renderedSEO.contentStats?.words ?? extractMainText(renderedHtml).words;
     push('content.words', noJsWords, renderedWords);
-
     const textSimilarity = Number(jaccard(noJsText, renderedText).toFixed(3));
     const keyChanges = diffs.filter(d => !d.same);
 
