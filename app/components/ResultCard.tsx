@@ -11,6 +11,8 @@ import RobotsCard from './RobotsCard';
 import HreflangCard from './HreflangCard';
 import CanonicalizeCard from './CanonicalizeCard';
 import ImageAuditCard from './ImageAuditCard';
+import LinkCheckerCard from './LinkCheckerCard';
+import HeadersCard from './HeadersCard';
 import AmpCard from './AmpCard';
 export default function ResultCard({ data }:{ data:any }){
   const [tab, setTab] = useState<string>('overview');
@@ -172,6 +174,7 @@ export default function ResultCard({ data }:{ data:any }){
               <div className="k">Nofollow</div><div className="v">{Links.nofollow ?? 0}</div>
             </div>
           </section>
+{tab==='links' && (<LinkCheckerCard url={data.finalUrl || data.url} />)}
 
           {/* Optional full table via LinkChecker */}
           {data.finalUrl || data.url ? (
@@ -225,6 +228,7 @@ export default function ResultCard({ data }:{ data:any }){
     <AmpCard       url={data.finalUrl || data.url} />
     <RedirectsCard url={data.finalUrl || data.url} />
     <RobotsCard    url={data.finalUrl || data.url} />
+     <HeadersCard  url={data.finalUrl || data.url} />
   </>
 )}
 
