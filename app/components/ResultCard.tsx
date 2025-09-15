@@ -159,21 +159,25 @@ export default function ResultCard({ data }:{ data:any }){
         </>
       )}
 
-      {/* LINKS */}
-      {tab==='links' && (
-        <>
-          <section>
-            <h3 className="font-semibold mb-3">Links</h3>
-            <div className="kv">
-              <div className="k">Total</div><div className="v">{Links.total ?? 0}</div>
-              <div className="k">Internal</div><div className="v">{Links.internal ?? 0}</div>
-              <div className="k">External</div><div className="v">{Links.external ?? 0}</div>
-              <div className="k">Nofollow</div><div className="v">{Links.nofollow ?? 0}</div>
-            </div>
-          </section>
-          <LinkCheckerCard url={data.finalUrl || data.url} />
-        </>
-      )}
+     // LINKS
+{tab==='links' && (
+  <>
+    <section>
+      <h3 className="font-semibold mb-3">Links</h3>
+      <div className="kv">
+        <div className="k">Total</div><div className="v">{Links.total ?? 0}</div>
+        <div className="k">Internal</div><div className="v">{Links.internal ?? 0}</div>
+        <div className="k">External</div><div className="v">{Links.external ?? 0}</div>
+        <div className="k">Nofollow</div><div className="v">{Links.nofollow ?? 0}</div>
+      </div>
+    </section>
+
+    {/* Render the LinkCheckerCard only once, if the URL exists */}
+    {data.finalUrl || data.url ? (
+      <LinkCheckerCard url={data.finalUrl || data.url} />
+    ) : null}
+  </>
+)}
 
       {/* STRUCTURED DATA */}
       {tab==='structured' && (
