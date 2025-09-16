@@ -14,7 +14,6 @@ import ImageAuditCard from "./ImageAuditCard";
 import HeadersCard from "./HeadersCard";
 import AmpCard from "./AmpCard";
 import RenderCompareCard from './RenderCompareCard';
-import CwvCard from './CwvCard';
 import CrawlHintsCard from './CrawlHintsCard';
 
 
