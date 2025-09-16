@@ -14,6 +14,8 @@ import ImageAuditCard from "./ImageAuditCard";
 import HeadersCard from "./HeadersCard";
 import AmpCard from "./AmpCard";
 import RenderCompareCard from './RenderCompareCard';
+import CwvCard from './CwvCard';
+import CrawlHintsCard from './CrawlHintsCard';
 
 
 export default function ResultCard({ data }: { data: any }) {
@@ -297,7 +299,7 @@ export default function ResultCard({ data }: { data: any }) {
               </div>
             </div>
           </section>
-
+          <CrawlHintsCard url={data.finalUrl || data.url} />
           <CanonicalizeCard url={data.finalUrl || data.url} />
          <RenderCompareCard url={data.finalUrl || data.url} />
           <AmpCard url={data.finalUrl || data.url} />
@@ -316,6 +318,7 @@ export default function ResultCard({ data }: { data: any }) {
       )}
 
       {tab === "performance" && <PsiCard url={data.finalUrl || data.url} />}
+       <CwvCard url={data.finalUrl || data.url} />
     </div>
   );
 }
