@@ -1,3 +1,4 @@
+// vercel.json (at repo root)
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
