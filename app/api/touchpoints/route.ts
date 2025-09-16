@@ -18,6 +18,16 @@ type InlinkReferrer = {
   nofollow: boolean;
 };
 
+type AssetInfo = {
+  url: string;
+  type: 'script' | 'style' | 'image' | 'font' | 'media' | 'preload' | 'other';
+  status?: number;
+  contentType?: string | null;
+  bytes?: number | null;            // content-length (may be null if unknown)
+  thirdParty: boolean;
+  blocking?: boolean;               // render-blocking hint (stylesheets & head scripts without async/defer)
+};
+
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '' });
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118 Safari/537.36';
@@ -25,13 +35,10 @@ const UA =
 const norm = (u: string) => {
   try {
     const x = new URL(u);
-    // normalize host + trailing slash
     x.host = x.host.toLowerCase();
     if (x.pathname !== '/' && x.pathname.endsWith('/')) x.pathname = x.pathname.slice(0, -1);
-    // drop default ports
     if (x.port === '80' && x.protocol === 'http:') x.port = '';
     if (x.port === '443' && x.protocol === 'https:') x.port = '';
-    // strip hash
     x.hash = '';
     return x.toString();
   } catch { return u; }
@@ -69,8 +76,7 @@ function parseRobotsForStarAgent(txt: string) {
       sitemaps.push(v);
     }
   }
-  const star = blocks.filter(b => b.agent === '*' || b.agent.includes('*'))
-    .flatMap(b => b.rules);
+  const star = blocks.filter(b => b.agent === '*' || b.agent.includes('*')).flatMap(b => b.rules);
   return { sitemaps, rules: star as Array<{ type: 'allow' | 'disallow'; path: string }> };
 }
 
@@ -130,7 +136,7 @@ async function checkSitemapsForUrl(sitemapUrls: string[], targetUrl: string, lim
   return out;
 }
 
-/** NEW: collect internal URLs from sitemaps (origin-only), up to limits */
+/** Collect internal URLs from sitemaps (origin-only), up to limits */
 async function collectSitemapUrls(sitemapUrls: string[], origin: string, maxFiles = 5, maxUrls = 150) {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -152,7 +158,7 @@ async function collectSitemapUrls(sitemapUrls: string[], origin: string, maxFile
       const xml = parser.parse(r.body);
       if (xml.sitemapindex?.sitemap) {
         const kids = (Array.isArray(xml.sitemapindex.sitemap) ? xml.sitemapindex.sitemap : [xml.sitemapindex.sitemap])
-          .map((s: any) => s.loc).filter(Boolean).slice(0, 8); // cap child count
+          .map((s: any) => s.loc).filter(Boolean).slice(0, 8);
         for (const child of kids) {
           try {
             const rr = await got(child, { timeout: { request: 20000 }, headers: { 'user-agent': UA } });
@@ -173,7 +179,7 @@ async function collectSitemapUrls(sitemapUrls: string[], origin: string, maxFile
   return out;
 }
 
-/** NEW: scan a list of pages for anchor inlinks to target */
+/** Scan a list of pages for anchor inlinks to target */
 async function findInternalReferrers(candidates: string[], target: string, sample = 40): Promise<{searched:number; found:InlinkReferrer[]}> {
   const pick = candidates.slice(0, sample);
   const found: InlinkReferrer[] = [];
@@ -181,13 +187,13 @@ async function findInternalReferrers(candidates: string[], target: string, sampl
 
   for (const u of pick) {
     try {
-      if (norm(u) === norm(target)) continue; // skip self
+      if (norm(u) === norm(target)) continue;
       const r = await fetchHtml(u);
       searched++;
       const $ = cheerio.load(r.body);
       let hitRecorded = false;
       $('a[href]').each((_, el) => {
-        if (hitRecorded) return; // record only first hit per page
+        if (hitRecorded) return;
         const href = String($(el).attr('href') || '').trim();
         if (!href) return;
         try {
@@ -206,6 +212,138 @@ async function findInternalReferrers(candidates: string[], target: string, sampl
     }
   }
   return { searched, found };
+}
+
+/** NEW: extract all <a> links from a page */
+function extractAllLinks($: cheerio.CheerioAPI, baseUrl: string, max = 1000) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  $('a[href]').each((_, el)=>{
+    const href = String($(el).attr('href') || '').trim();
+    if (!href) return;
+    try {
+      const abs = new URL(href, baseUrl).toString();
+      const n = norm(abs);
+      if (!seen.has(n)) {
+        seen.add(n);
+        out.push(n);
+        if (out.length >= max) return false as any;
+      }
+    } catch {}
+  });
+  return out;
+}
+
+/** NEW: gather assets from HTML */
+function gatherAssets($: cheerio.CheerioAPI, baseUrl: string) {
+  const base = new URL(baseUrl);
+  const assets: AssetInfo[] = [];
+  const push = (url: string, type: AssetInfo['type'], third: boolean, blocking?: boolean) => {
+    assets.push({ url, type, thirdParty: third, blocking });
+  };
+
+  // Stylesheets
+  $('link[rel="stylesheet"][href]').each((_, el) => {
+    const href = String($(el).attr('href') || '').trim(); if (!href) return;
+    try {
+      const abs = new URL(href, baseUrl).toString();
+      push(abs, 'style', new URL(abs).origin !== base.origin, true);
+    } catch {}
+  });
+
+  // Preload hints
+  $('link[rel="preload"][href]').each((_, el) => {
+    const href = String($(el).attr('href') || '').trim(); if (!href) return;
+    try {
+      const abs = new URL(href, baseUrl).toString();
+      push(abs, 'preload', new URL(abs).origin !== base.origin, false);
+    } catch {}
+  });
+
+  // Scripts (mark head scripts without async/defer as blocking)
+  const headScriptSet = new Set<any>();
+  $('head script[src]').each((_, el) => { headScriptSet.add(el); });
+  $('script[src]').each((_, el) => {
+    const src = String($(el).attr('src') || '').trim(); if (!src) return;
+    try {
+      const abs = new URL(src, baseUrl).toString();
+      const inHead = headScriptSet.has(el);
+      const attrs = $(el).attr() || {};
+      const blocking = inHead && !('async' in attrs) && !('defer' in attrs);
+      push(abs, 'script', new URL(abs).origin !== base.origin, blocking);
+    } catch {}
+  });
+
+  // Images
+  $('img[src]').each((_, el) => {
+    const src = String($(el).attr('src') || '').trim(); if (!src) return;
+    try {
+      const abs = new URL(src, baseUrl).toString();
+      push(abs, 'image', new URL(abs).origin !== base.origin, false);
+    } catch {}
+  });
+
+  // Media
+  $('video[src], audio[src], source[src], iframe[src]').each((_, el) => {
+    const src = String($(el).attr('src') || '').trim(); if (!src) return;
+    try {
+      const abs = new URL(src, baseUrl).toString();
+      push(abs, 'media', new URL(abs).origin !== base.origin, false);
+    } catch {}
+  });
+
+  // Fonts (best-effort via rel=preload as=font)
+  $('link[rel="preload"][as="font"][href]').each((_, el) => {
+    const href = String($(el).attr('href') || '').trim(); if (!href) return;
+    try {
+      const abs = new URL(href, baseUrl).toString();
+      push(abs, 'font', new URL(abs).origin !== base.origin, false);
+    } catch {}
+  });
+
+  return assets;
+}
+
+/** NEW: probe asset HEAD (fallback to range GET) */
+async function probeAsset(url: string): Promise<Pick<AssetInfo,'status'|'contentType'|'bytes'>> {
+  try {
+    const h = await got.head(url, { followRedirect: true, throwHttpErrors: false, timeout: { request: 12000 }, headers: { 'user-agent': UA } });
+    const ct = (h.headers['content-type'] as string) || null;
+    const len = h.headers['content-length'] != null ? Number(h.headers['content-length']) : null;
+    return { status: h.statusCode, contentType: ct, bytes: Number.isFinite(len||NaN) ? len : null };
+  } catch {
+    try {
+      const g = await got(url, { method: 'GET', followRedirect: true, throwHttpErrors: false, timeout: { request: 12000 }, headers: { 'user-agent': UA, Range: 'bytes=0-0' } });
+      const ct = (g.headers['content-type'] as string) || null;
+      const len = g.headers['content-range']
+        ? Number(String(g.headers['content-range']).split('/').pop())
+        : (g.headers['content-length'] != null ? Number(g.headers['content-length']) : null);
+      return { status: g.statusCode, contentType: ct, bytes: Number.isFinite(len||NaN) ? len : null };
+    } catch {
+      return { status: undefined, contentType: null, bytes: null };
+    }
+  }
+}
+
+/** NEW: fetch sizes for a limited set of assets with concurrency */
+async function auditAssets(assets: AssetInfo[], maxAssets = 80, concurrency = 6) {
+  const slice = assets.slice(0, maxAssets);
+  const out: AssetInfo[] = Array.from(slice);
+  let i = 0;
+  async function worker() {
+    while (i < slice.length) {
+      const idx = i++;
+      const a = slice[idx];
+      const meta = await probeAsset(a.url);
+      out[idx] = { ...a, ...meta };
+    }
+  }
+  const workers = Array.from({ length: concurrency }, () => worker());
+  await Promise.all(workers);
+  const sorted = out
+    .filter(a => a.bytes != null)
+    .sort((a, b) => (b.bytes || 0) - (a.bytes || 0));
+  return { scanned: slice.length, assets: out, top10: sorted.slice(0, 10) };
 }
 
 async function hreflangBackrefs(samples: Array<{ lang: string; href: string }>, selfUrl: string, max = 5): Promise<HreflangBackref[]> {
@@ -257,10 +395,10 @@ export async function POST(req: NextRequest) {
     } catch {}
 
     // 3) Sitemap inclusion
-    const sitemapCandidates = [
+    const sitemapCandidates = [...new Set([
       ...robotsInfo.sitemaps,
       ...discoverLikelySitemaps(origin),
-    ].filter((v, i, a) => a.indexOf(v) === i);
+    ])];
     const sitemapCheck = await checkSitemapsForUrl(sitemapCandidates, finalUrl);
 
     // 4) Canonical reciprocity & conflicts
@@ -274,7 +412,7 @@ export async function POST(req: NextRequest) {
           url: can.finalUrl,
           status: can.status,
           selfCanonical: !!(canSeo.canonical && norm(canSeo.canonical) === norm(can.finalUrl)),
-          loopBack: !!(canSeo.canonical && norm(canSeo.canonical) === norm(finalUrl)), // A->B and B->A
+          loopBack: !!(canSeo.canonical && norm(canSeo.canonical) === norm(finalUrl)),
         };
         if (canonicalTarget.loopBack) conflicts.push('Canonical loop: page canonicalizes to a URL that canonicalizes back here.');
         if (can.status && can.status >= 400) conflicts.push(`Canonical target returns ${can.status}.`);
@@ -285,10 +423,18 @@ export async function POST(req: NextRequest) {
 
     // 5) AMP reciprocity
     let amp: { ampUrl?: string; backCanonicalOk?: boolean; status?: number } = {};
+    let ampLinks: string[] = [];
+    let ampAssetsTop: { scanned:number; assets: AssetInfo[]; top10: AssetInfo[] } | null = null;
+
     if (seo.ampHtml) {
       try {
         const ampR = await fetchHtml(seo.ampHtml);
         const ampSeo = parseSEO(ampR.body, ampR.finalUrl, ampR.headers, ampR.status);
+        const $amp = cheerio.load(ampR.body);
+        ampLinks = extractAllLinks($amp, ampR.finalUrl, 1000);
+        const ampAssets = gatherAssets($amp, ampR.finalUrl);
+        ampAssetsTop = await auditAssets(ampAssets, 60, 6);
+
         amp = {
           ampUrl: ampR.finalUrl,
           status: ampR.status,
@@ -315,6 +461,23 @@ export async function POST(req: NextRequest) {
     if (robotsInfo.blocked && sitemapCheck.found) conflicts.push('URL is disallowed in robots.txt but present in sitemap.');
 
     const $ = cheerio.load(page.body);
+
+    // 8) Internal referrers via sitemap sampling
+    const collectionList = sitemapCandidates.length ? sitemapCandidates : discoverLikelySitemaps(origin);
+    const internalUrls = await collectSitemapUrls(collectionList, origin, 5, 150);
+    const pathRoot = '/' + (new URL(finalUrl).pathname.split('/').filter(Boolean)[0] || '');
+    const prioritized = [
+      ...internalUrls.filter(u => new URL(u).pathname.startsWith(pathRoot) && norm(u) !== norm(finalUrl)),
+      ...internalUrls.filter(u => !new URL(u).pathname.startsWith(pathRoot) && norm(u) !== norm(finalUrl)),
+    ];
+    const inlinkScan = await findInternalReferrers(prioritized, finalUrl, 40);
+
+    // 9) NEW: All links on NON-AMP page + asset audit
+    const pageLinks = extractAllLinks($, finalUrl, 2000);
+    const pageAssets = gatherAssets($, finalUrl);
+    const pageAssetsTop = await auditAssets(pageAssets, 80, 6);
+
+    // 10) Outbound pointers snapshot
     const paramLinks = new Set<string>();
     $('a[href]').each((_, el) => {
       const href = String($(el).attr('href') || '').trim();
@@ -328,19 +491,6 @@ export async function POST(req: NextRequest) {
       } catch {}
     });
 
-    // 8) NEW: Internal referrers via sitemap sampling
-    // Build a list of internal URLs from declared/likely sitemaps, then scan a sample for links to this URL.
-    const collectionList = sitemapCandidates.length ? sitemapCandidates : discoverLikelySitemaps(origin);
-    const internalUrls = await collectSitemapUrls(collectionList, origin, 5, 150);
-    // Prefer URLs that share the same path root (heuristic)
-    const pathRoot = '/' + (new URL(finalUrl).pathname.split('/').filter(Boolean)[0] || '');
-    const prioritized = [
-      ...internalUrls.filter(u => new URL(u).pathname.startsWith(pathRoot) && norm(u) !== norm(finalUrl)),
-      ...internalUrls.filter(u => !new URL(u).pathname.startsWith(pathRoot) && norm(u) !== norm(finalUrl)),
-    ];
-    const inlinkScan = await findInternalReferrers(prioritized, finalUrl, 40);
-
-    // 9) Outbound pointers snapshot
     const pointers = {
       canonical: seo.canonical || null,
       amphtml: seo.ampHtml || null,
@@ -363,12 +513,9 @@ export async function POST(req: NextRequest) {
           sitemaps: collectionList.slice(0, 10),
         },
         sitemap: {
-          tested: await (async () => {
-            const sm = await checkSitemapsForUrl(collectionList, finalUrl);
-            return sm.tested;
-          })(),
-          found: (await checkSitemapsForUrl(collectionList, finalUrl)).found,
-          sample: (await checkSitemapsForUrl(collectionList, finalUrl)).sample || null,
+          tested: sitemapCheck.tested,
+          found: sitemapCheck.found,
+          sample: sitemapCheck.sample || null,
         },
         canonical: {
           pageCanonical: seo.canonical || null,
@@ -388,8 +535,20 @@ export async function POST(req: NextRequest) {
         inlinks: {
           searched: inlinkScan.searched,
           found: inlinkScan.found.length,
-          referrers: inlinkScan.found.slice(0, 20), // cap for payload size
+          referrers: inlinkScan.found.slice(0, 20),
         },
+
+        // NEW: Links (non-AMP & AMP)
+        links: {
+          nonAmp: { total: pageLinks.length, list: pageLinks.slice(0, 1000) },
+          amp: seo.ampHtml ? { total: ampLinks.length, list: ampLinks.slice(0, 1000) } : null
+        },
+
+        // NEW: Heavy assets (sizes/status/content-type, with top 10)
+        heavy: {
+          page: { scanned: pageAssetsTop.scanned, top10: pageAssetsTop.top10, total: pageAssetsTop.assets.length, assets: pageAssetsTop.assets },
+          amp: ampAssetsTop ? { scanned: ampAssetsTop.scanned, top10: ampAssetsTop.top10, total: ampAssetsTop.assets.length, assets: ampAssetsTop.assets } : null
+        }
       }
     }), { status: 200, headers: { 'content-type': 'application/json' } });
 
