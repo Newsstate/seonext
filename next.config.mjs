@@ -3,18 +3,13 @@
 const nextConfig = {
   experimental: {
     typedRoutes: true,
+    // ✅ Ensure the Lambda-friendly Chromium + puppeteer-core are bundled
     serverComponentsExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
-    // Make sure chromium's binary + shared libs are traced into the function
     outputFileTracingIncludes: {
-      'app/api/render-compare/route': [
-        './node_modules/@sparticuz/chromium/bin/*',
-        './node_modules/@sparticuz/chromium/lib/*',
+      // 👇 path to your API route file
+      'app/api/render-compare/route.ts': [
+        './node_modules/@sparticuz/chromium/**/*',
       ],
-      // Add any other Puppeteer routes too:
-      // 'app/api/amp-compare/route': [
-      //   './node_modules/@sparticuz/chromium/bin/*',
-      //   './node_modules/@sparticuz/chromium/lib/*',
-      // ],
     },
   },
 };
