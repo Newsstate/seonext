@@ -15,7 +15,7 @@ import HeadersCard from "./HeadersCard";
 import AmpCard from "./AmpCard";
 import RenderCompareCard from './RenderCompareCard';
 import CrawlHintsCard from './CrawlHintsCard';
-
+import TouchpointsCard from './TouchpointsCard';
 
 export default function ResultCard({ data }: { data: any }) {
   const [tab, setTab] = useState<string>("overview");
@@ -298,6 +298,8 @@ export default function ResultCard({ data }: { data: any }) {
               </div>
             </div>
           </section>
+             
+          <TouchpointsCard url={data.finalUrl || data.url} />
           <CrawlHintsCard url={data.finalUrl || data.url} />
           <CanonicalizeCard url={data.finalUrl || data.url} />
          <RenderCompareCard url={data.finalUrl || data.url} />
@@ -313,6 +315,7 @@ export default function ResultCard({ data }: { data: any }) {
           <IndexingCard url={data.finalUrl || data.url} />
           <SitemapCard url={data.finalUrl || data.url} />
           <HreflangCard url={data.finalUrl || data.url} />
+          
         </>
       )}
 
