@@ -5,6 +5,7 @@ import * as cheerio from 'cheerio';
 import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
 import path from 'path';
+import { createRequire } from 'module';
 import { parseSEO, extractMainText, jaccard } from '@/lib/seo';
 
 export const runtime = 'nodejs';
@@ -23,23 +24,32 @@ const sameSet = (a?: string[], b?: string[]) => {
 };
 const domSize = (html: string) => cheerio.load(html)('*').length;
 
+const require = createRequire(import.meta.url);
+
 async function launchBrowser() {
+  // Path to lambda-friendly Chromium binary (typically /tmp/chromium on Vercel)
   const executablePath = await chromium.executablePath();
 
-  // Point the dynamic linker to Chromium’s extracted lib dir.
-  // On Vercel/AWS, @sparticuz/chromium expands to /tmp/chromium*
-  if (executablePath) {
-    const execDir = path.dirname(executablePath);
-    const ld = [
-      execDir,
-      '/usr/lib64',
-      '/usr/lib',
-      '/lib64',
-      '/lib',
-      process.env.LD_LIBRARY_PATH || '',
-    ].filter(Boolean);
-    process.env.LD_LIBRARY_PATH = ld.join(':');
-  }
+  // Locate @sparticuz/chromium's native libs (libnss3.so, etc.) inside node_modules
+  const chromiumPkgPath = require.resolve('@sparticuz/chromium/package.json');
+  const chromiumRoot = path.dirname(chromiumPkgPath);
+  const libDir = path.join(chromiumRoot, 'lib');    // contains libnss3.so, libnspr4.so, ...
+  const fontsDir = path.join(chromiumRoot, 'fonts'); // optional but helpful
+
+  // Make the dynamic loader see the libs (package lib/) and the extracted binary dir (/tmp)
+  const ld = [
+    libDir,
+    executablePath ? path.dirname(executablePath) : null,
+    '/usr/lib64',
+    '/usr/lib',
+    '/lib64',
+    '/lib',
+    process.env.LD_LIBRARY_PATH || null,
+  ].filter(Boolean) as string[];
+
+  process.env.LD_LIBRARY_PATH = Array.from(new Set(ld)).join(':');
+  if (!process.env.FONTCONFIG_PATH) process.env.FONTCONFIG_PATH = fontsDir;
+  if (!process.env.TMPDIR) process.env.TMPDIR = '/tmp';
 
   return puppeteer.launch({
     args: [
@@ -50,6 +60,7 @@ async function launchBrowser() {
       '--disable-gpu',
       '--single-process',
       '--no-zygote',
+      '--user-data-dir=/tmp/chrome-user-data',
     ],
     defaultViewport: chromium.defaultViewport,
     executablePath: executablePath || process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH,
@@ -60,16 +71,21 @@ async function launchBrowser() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { url, waitUntil = 'networkidle2', renderTimeoutMs = 25000 } =
-      (await req.json()) as {
-        url: string;
-        waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2';
-        renderTimeoutMs?: number;
-      };
+    const {
+      url,
+      waitUntil = 'networkidle2',
+      renderTimeoutMs = 25000,
+    } = (await req.json()) as {
+      url: string;
+      waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2';
+      renderTimeoutMs?: number;
+    };
 
-    if (!url) return NextResponse.json({ ok: false, error: 'Missing url' }, { status: 400 });
+    if (!url) {
+      return NextResponse.json({ ok: false, error: 'Missing url' }, { status: 400 });
+    }
 
-    // ---- No-JS fetch ----
+    // ---- No-JS fetch (origin HTML) ----
     const baseResp = await got(url, {
       followRedirect: true,
       throwHttpErrors: false,
@@ -81,9 +97,14 @@ export async function POST(req: NextRequest) {
           'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
       },
     });
+
     if (baseResp.statusCode >= 400) {
-      return NextResponse.json({ ok: false, error: `Source returned ${baseResp.statusCode}` }, { status: 200 });
+      return NextResponse.json(
+        { ok: false, error: `Source returned ${baseResp.statusCode}` },
+        { status: 200 },
+      );
     }
+
     const noJsUrl = baseResp.url;
     const noJsHtml = baseResp.body;
     const noJsSEO = parseSEO(noJsHtml, noJsUrl, baseResp.headers as any, baseResp.statusCode);
@@ -92,16 +113,17 @@ export async function POST(req: NextRequest) {
     const noJsDom = domSize(noJsHtml);
     const noJsWords = noJsSEO.contentStats?.words ?? noJsMain.words;
 
-    // ---- JS-rendered (headless) ----
+    // ---- JS-rendered HTML (headless) ----
     const browser = await launchBrowser();
     try {
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
       await page.setUserAgent(
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118 Safari/537.36'
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118 Safari/537.36',
       );
 
       const resp = await page.goto(url, { waitUntil, timeout: renderTimeoutMs });
+      // small settle for late mutations
       await new Promise((r) => setTimeout(r, 300));
 
       const renderedHtml = await page.content();
@@ -109,7 +131,12 @@ export async function POST(req: NextRequest) {
       const renderedStatus = resp?.status();
       const renderedHeaders = resp ? resp.headers() : {};
 
-      const renderedSEO = parseSEO(renderedHtml, renderedUrl, renderedHeaders as any, renderedStatus);
+      const renderedSEO = parseSEO(
+        renderedHtml,
+        renderedUrl,
+        renderedHeaders as any,
+        renderedStatus,
+      );
       const renderedMain = extractMainText(renderedHtml);
       const renderedText = renderedMain.text;
       const renderedDom = domSize(renderedHtml);
@@ -153,33 +180,51 @@ export async function POST(req: NextRequest) {
       push('schemaTypes', noJsSEO.schemaTypes, renderedSEO.schemaTypes, sameSet);
 
       // HTTP
-      push('http.status', noJsSEO.http?.status ?? baseResp.statusCode, renderedSEO.http?.status ?? renderedStatus ?? null);
+      push(
+        'http.status',
+        noJsSEO.http?.status ?? baseResp.statusCode,
+        renderedSEO.http?.status ?? renderedStatus ?? null,
+      );
       push('http.contentType', noJsSEO.http?.contentType ?? null, renderedSEO.http?.contentType ?? null);
       push('http.xRobotsTag', noJsSEO.http?.xRobotsTag ?? null, renderedSEO.http?.xRobotsTag ?? null);
 
       // Hreflang (compare by lang:href)
-      const mapList = (m?: Array<{ lang: string; href: string }>) => (m || []).map(x => `${x.lang}:${x.href}`);
+      const mapList = (m?: Array<{ lang: string; href: string }>) =>
+        (m || []).map((x) => `${x.lang}:${x.href}`);
       push('hreflang.map', mapList(noJsSEO.hreflangMap), mapList(renderedSEO.hreflangMap), sameSet);
 
       // Content stats + similarity
       push('content.words', noJsWords, renderedWords);
       const textSimilarity = Number(jaccard(noJsText, renderedText).toFixed(3));
-      const keyChanges = diffs.filter(d => !d.same);
+      const keyChanges = diffs.filter((d) => !d.same);
 
-      return NextResponse.json({
-        ok: true,
-        data: {
-          noJs:     { url: noJsUrl,     status: noJsSEO.http?.status ?? baseResp.statusCode, domSize: noJsDom,     words: noJsWords },
-          rendered: { url: renderedUrl, status: renderedSEO.http?.status ?? renderedStatus ?? null, domSize: renderedDom, words: renderedWords },
-          summary:  {
-            textSimilarity,
-            domDelta:   renderedDom - noJsDom,
-            wordsDelta: renderedWords - noJsWords,
-            keyChangesCount: keyChanges.length,
+      return NextResponse.json(
+        {
+          ok: true,
+          data: {
+            noJs: {
+              url: noJsUrl,
+              status: noJsSEO.http?.status ?? baseResp.statusCode,
+              domSize: noJsDom,
+              words: noJsWords,
+            },
+            rendered: {
+              url: renderedUrl,
+              status: renderedSEO.http?.status ?? renderedStatus ?? null,
+              domSize: renderedDom,
+              words: renderedWords,
+            },
+            summary: {
+              textSimilarity,
+              domDelta: renderedDom - noJsDom,
+              wordsDelta: renderedWords - noJsWords,
+              keyChangesCount: keyChanges.length,
+            },
+            diffs,
           },
-          diffs,
         },
-      }, { headers: { 'cache-control': 'no-store' } });
+        { headers: { 'cache-control': 'no-store' } },
+      );
     } finally {
       await browser.close().catch(() => {});
     }
