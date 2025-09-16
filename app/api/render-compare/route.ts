@@ -24,85 +24,63 @@ const sameSet = (a?: string[], b?: string[]) => {
 };
 const domSize = (html: string) => cheerio.load(html)('*').length;
 
-function unique<T>(arr: T[]) {
-  return Array.from(new Set(arr.filter(Boolean))) as T[];
-}
-
 function firstExisting(paths: string[]) {
-  for (const p of paths) {
-    try {
-      if (p && fs.existsSync(p)) return p;
-    } catch {}
-  }
+  for (const p of paths) try { if (p && fs.existsSync(p)) return p; } catch {}
   return undefined;
 }
 
 async function launchBrowser() {
-  const executablePath = await chromium.executablePath(); // typically /tmp/chromium on Vercel
-  const execDir = executablePath ? path.dirname(executablePath) : undefined;
+  // Help @sparticuz/chromium behave like Lambda on Vercel/Fluid Compute
+  if (!process.env.AWS_LAMBDA_JS_RUNTIME) process.env.AWS_LAMBDA_JS_RUNTIME = 'nodejs20.x';
 
-  // Conservative guesses for the package lib/ + fonts/ inside the deployed fn
+  const execPath = await chromium.executablePath(); // usually /tmp/chromium on Vercel
+  const execDir = execPath ? path.dirname(execPath) : '/tmp';
+
+  // Where the package ships its native libs (bundled via vercel.json includeFiles)
   const pkgRoot1 = path.join(process.cwd(), 'node_modules', '@sparticuz', 'chromium');
-  const pkgRoot2 = '/var/task/node_modules/@sparticuz/chromium'; // Vercel layout
+  const pkgRoot2 = '/var/task/node_modules/@sparticuz/chromium';
+  const libDir = firstExisting([path.join(pkgRoot1, 'lib'), path.join(pkgRoot2, 'lib')]);
+  const fontsDir = firstExisting([path.join(pkgRoot1, 'fonts'), path.join(pkgRoot2, 'fonts')]);
 
-  const libDir = firstExisting([
-    path.join(pkgRoot1, 'lib'),
-    path.join(pkgRoot2, 'lib'),
-  ]);
-  const fontsDir = firstExisting([
-    path.join(pkgRoot1, 'fonts'),
-    path.join(pkgRoot2, 'fonts'),
-  ]);
-
-  // Make the loader see native libs (libnss3.so etc.) and the extracted /tmp binary dir
-  const ldParts = unique<string>([
-    libDir || '',             // package libs (bundled via includeFiles)
-    execDir || '',            // /tmp
+  // Make the dynamic loader see NSS/NSPR, etc.
+  const ld = [
+    libDir || '',
+    execDir,
     process.env.LD_LIBRARY_PATH || '',
     '/usr/lib64', '/usr/lib', '/lib64', '/lib',
-  ]);
-  process.env.LD_LIBRARY_PATH = ldParts.filter(Boolean).join(':');
-
-  if (!process.env.FONTCONFIG_PATH && fontsDir) {
-    process.env.FONTCONFIG_PATH = fontsDir;
-  }
+  ].filter(Boolean);
+  process.env.LD_LIBRARY_PATH = Array.from(new Set(ld)).join(':');
+  if (fontsDir && !process.env.FONTCONFIG_PATH) process.env.FONTCONFIG_PATH = fontsDir;
   if (!process.env.TMPDIR) process.env.TMPDIR = '/tmp';
 
+  // Use @sparticuz settings + Puppeteer defaultArgs with headless:"shell"
+  // (matches package guidance) :contentReference[oaicite:1]{index=1}
+  const headlessType: 'shell' = 'shell';
+  const args = puppeteer.defaultArgs({ args: chromium.args, headless: headlessType });
+
   return puppeteer.launch({
-    args: [
-      ...chromium.args,
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--single-process',
-      '--no-zygote',
-      '--user-data-dir=/tmp/chrome-user-data',
-    ],
+    args,
     defaultViewport: chromium.defaultViewport,
-    executablePath: executablePath || process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH,
-    headless: chromium.headless ?? true,
+    executablePath: execPath,
+    headless: headlessType,
     ignoreHTTPSErrors: true,
   });
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const {
-      url,
-      waitUntil = 'networkidle2',
-      renderTimeoutMs = 25000,
-    } = (await req.json()) as {
-      url: string;
-      waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2';
-      renderTimeoutMs?: number;
-    };
+    const { url, waitUntil = 'networkidle2', renderTimeoutMs = 25000 } =
+      (await req.json()) as {
+        url: string;
+        waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2';
+        renderTimeoutMs?: number;
+      };
 
     if (!url) {
       return NextResponse.json({ ok: false, error: 'Missing url' }, { status: 400 });
     }
 
-    // ---- No-JS fetch (origin HTML) ----
+    // ---- No-JS (origin HTML) ----
     const baseResp = await got(url, {
       followRedirect: true,
       throwHttpErrors: false,
@@ -130,7 +108,7 @@ export async function POST(req: NextRequest) {
     const noJsDom = domSize(noJsHtml);
     const noJsWords = noJsSEO.contentStats?.words ?? noJsMain.words;
 
-    // ---- JS-rendered HTML (headless) ----
+    // ---- JS-rendered ----
     const browser = await launchBrowser();
     try {
       const page = await browser.newPage();
@@ -140,7 +118,7 @@ export async function POST(req: NextRequest) {
       );
 
       const resp = await page.goto(url, { waitUntil, timeout: renderTimeoutMs });
-      await new Promise((res) => setTimeout(res, 300)); // tiny settle
+      await new Promise((r) => setTimeout(r, 300));
 
       const renderedHtml = await page.content();
       const renderedUrl = page.url();
@@ -158,7 +136,6 @@ export async function POST(req: NextRequest) {
       const renderedDom = domSize(renderedHtml);
       const renderedWords = renderedSEO.contentStats?.words ?? renderedMain.words;
 
-      // ---- Diffs ----
       const diffs: DiffRow[] = [];
       const push = (key: string, a: any, b: any, cmp?: (a: any, b: any) => boolean) => {
         const same = cmp ? cmp(a, b) : JSON.stringify(a) === JSON.stringify(b);
@@ -200,11 +177,11 @@ export async function POST(req: NextRequest) {
       push('http.contentType', noJsSEO.http?.contentType ?? null, renderedSEO.http?.contentType ?? null);
       push('http.xRobotsTag', noJsSEO.http?.xRobotsTag ?? null, renderedSEO.http?.xRobotsTag ?? null);
 
-      // Hreflang (compare by lang:href)
+      // Hreflang
       const mapList = (m?: Array<{ lang: string; href: string }>) => (m || []).map(x => `${x.lang}:${x.href}`);
       push('hreflang.map', mapList(noJsSEO.hreflangMap), mapList(renderedSEO.hreflangMap), sameSet);
 
-      // Content stats + similarity
+      // Stats + similarity
       push('content.words', noJsWords, renderedWords);
       const textSimilarity = Number(jaccard(noJsText, renderedText).toFixed(3));
       const keyChanges = diffs.filter(d => !d.same);
@@ -223,6 +200,7 @@ export async function POST(req: NextRequest) {
           diffs,
         }
       }, { headers: { 'cache-control': 'no-store' } });
+
     } finally {
       await browser.close().catch(() => {});
     }
