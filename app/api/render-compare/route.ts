@@ -26,45 +26,40 @@ function isServerless() {
   return !!(process.env.AWS_REGION || process.env.VERCEL);
 }
 
+async function resolveExecutablePath() {
+  // Prefer Lambda/Vercel-friendly Chromium
+  const lambdaPath = await chromium.executablePath();
+  if (lambdaPath) return lambdaPath;
+
+  // Local/dev fallback via env
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH!;
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH!;
+
+  // Common local paths (best-effort; optional)
+  const guesses =
+    process.platform === 'darwin'
+      ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
+      : process.platform === 'win32'
+      ? [
+          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        ]
+      : ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium'];
+
+  // We can’t fs.stat here reliably without bundling, so just return first guess;
+  // if incorrect, Puppeteer will throw with a clear message.
+  return guesses[0];
+}
+
 async function launchBrowser() {
-  if (isServerless()) {
-    // Lambda/Vercel: use Sparticuz Chromium
-    const executablePath = await chromium.executablePath();
-    return puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath,
-      headless: chromium.headless ?? true,
-      ignoreHTTPSErrors: true,
-    });
-  }
-
-  // Local dev fallbacks
-  const envPath = process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;
-  if (envPath) {
-    return puppeteer.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: envPath,
-      headless: true,
-    });
-  }
-
-  try {
-    // If you keep full "puppeteer" for dev, prefer its bundled Chromium
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    const p = await import('puppeteer'); // optional dev dependency
-    const devExec = p.executablePath();
-    return puppeteer.launch({
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      executablePath: devExec,
-      headless: true,
-    });
-  } catch {
-    throw new Error(
-      'No Chromium found for local dev. Set CHROME_PATH or add "puppeteer" (dev) to use its bundled browser.'
-    );
-  }
+  const executablePath = await resolveExecutablePath();
+  return puppeteer.launch({
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    executablePath,
+    headless: chromium.headless ?? true,
+    ignoreHTTPSErrors: true,
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -89,7 +84,6 @@ export async function POST(req: NextRequest) {
       throwHttpErrors: false,
       timeout: { request: 20000 },
       headers: {
-        // keep it close to a real browser; helps some origins
         'user-agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118 Safari/537.36',
         accept:
@@ -116,16 +110,13 @@ export async function POST(req: NextRequest) {
     const browser = await launchBrowser();
     try {
       const page = await browser.newPage();
-
       await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
       await page.setUserAgent(
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118 Safari/537.36'
       );
 
       const resp = await page.goto(url, { waitUntil, timeout: renderTimeoutMs });
-
-      // tiny settle to allow lazy scripts/mutations
-      await new Promise((res) => setTimeout(res, 300));
+      await new Promise((res) => setTimeout(res, 300)); // small settle
 
       const renderedHtml = await page.content();
       const renderedUrl = page.url();
