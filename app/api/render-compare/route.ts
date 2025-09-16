@@ -5,7 +5,7 @@ import * as cheerio from 'cheerio';
 import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
 import path from 'path';
-import { createRequire } from 'module';
+import fs from 'fs';
 import { parseSEO, extractMainText, jaccard } from '@/lib/seo';
 
 export const runtime = 'nodejs';
@@ -24,31 +24,48 @@ const sameSet = (a?: string[], b?: string[]) => {
 };
 const domSize = (html: string) => cheerio.load(html)('*').length;
 
-const require = createRequire(import.meta.url);
+function unique<T>(arr: T[]) {
+  return Array.from(new Set(arr.filter(Boolean))) as T[];
+}
+
+function firstExisting(paths: string[]) {
+  for (const p of paths) {
+    try {
+      if (p && fs.existsSync(p)) return p;
+    } catch {}
+  }
+  return undefined;
+}
 
 async function launchBrowser() {
-  // Path to lambda-friendly Chromium binary (typically /tmp/chromium on Vercel)
-  const executablePath = await chromium.executablePath();
+  const executablePath = await chromium.executablePath(); // typically /tmp/chromium on Vercel
+  const execDir = executablePath ? path.dirname(executablePath) : undefined;
 
-  // Locate @sparticuz/chromium's native libs (libnss3.so, etc.) inside node_modules
-  const chromiumPkgPath = require.resolve('@sparticuz/chromium/package.json');
-  const chromiumRoot = path.dirname(chromiumPkgPath);
-  const libDir = path.join(chromiumRoot, 'lib');    // contains libnss3.so, libnspr4.so, ...
-  const fontsDir = path.join(chromiumRoot, 'fonts'); // optional but helpful
+  // Conservative guesses for the package lib/ + fonts/ inside the deployed fn
+  const pkgRoot1 = path.join(process.cwd(), 'node_modules', '@sparticuz', 'chromium');
+  const pkgRoot2 = '/var/task/node_modules/@sparticuz/chromium'; // Vercel layout
 
-  // Make the dynamic loader see the libs (package lib/) and the extracted binary dir (/tmp)
-  const ld = [
-    libDir,
-    executablePath ? path.dirname(executablePath) : null,
-    '/usr/lib64',
-    '/usr/lib',
-    '/lib64',
-    '/lib',
-    process.env.LD_LIBRARY_PATH || null,
-  ].filter(Boolean) as string[];
+  const libDir = firstExisting([
+    path.join(pkgRoot1, 'lib'),
+    path.join(pkgRoot2, 'lib'),
+  ]);
+  const fontsDir = firstExisting([
+    path.join(pkgRoot1, 'fonts'),
+    path.join(pkgRoot2, 'fonts'),
+  ]);
 
-  process.env.LD_LIBRARY_PATH = Array.from(new Set(ld)).join(':');
-  if (!process.env.FONTCONFIG_PATH) process.env.FONTCONFIG_PATH = fontsDir;
+  // Make the loader see native libs (libnss3.so etc.) and the extracted /tmp binary dir
+  const ldParts = unique<string>([
+    libDir || '',             // package libs (bundled via includeFiles)
+    execDir || '',            // /tmp
+    process.env.LD_LIBRARY_PATH || '',
+    '/usr/lib64', '/usr/lib', '/lib64', '/lib',
+  ]);
+  process.env.LD_LIBRARY_PATH = ldParts.filter(Boolean).join(':');
+
+  if (!process.env.FONTCONFIG_PATH && fontsDir) {
+    process.env.FONTCONFIG_PATH = fontsDir;
+  }
   if (!process.env.TMPDIR) process.env.TMPDIR = '/tmp';
 
   return puppeteer.launch({
@@ -101,7 +118,7 @@ export async function POST(req: NextRequest) {
     if (baseResp.statusCode >= 400) {
       return NextResponse.json(
         { ok: false, error: `Source returned ${baseResp.statusCode}` },
-        { status: 200 },
+        { status: 200 }
       );
     }
 
@@ -119,12 +136,11 @@ export async function POST(req: NextRequest) {
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
       await page.setUserAgent(
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118 Safari/537.36'
       );
 
       const resp = await page.goto(url, { waitUntil, timeout: renderTimeoutMs });
-      // small settle for late mutations
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((res) => setTimeout(res, 300)); // tiny settle
 
       const renderedHtml = await page.content();
       const renderedUrl = page.url();
@@ -135,7 +151,7 @@ export async function POST(req: NextRequest) {
         renderedHtml,
         renderedUrl,
         renderedHeaders as any,
-        renderedStatus,
+        renderedStatus
       );
       const renderedMain = extractMainText(renderedHtml);
       const renderedText = renderedMain.text;
@@ -180,51 +196,33 @@ export async function POST(req: NextRequest) {
       push('schemaTypes', noJsSEO.schemaTypes, renderedSEO.schemaTypes, sameSet);
 
       // HTTP
-      push(
-        'http.status',
-        noJsSEO.http?.status ?? baseResp.statusCode,
-        renderedSEO.http?.status ?? renderedStatus ?? null,
-      );
+      push('http.status', noJsSEO.http?.status ?? baseResp.statusCode, renderedSEO.http?.status ?? renderedStatus ?? null);
       push('http.contentType', noJsSEO.http?.contentType ?? null, renderedSEO.http?.contentType ?? null);
       push('http.xRobotsTag', noJsSEO.http?.xRobotsTag ?? null, renderedSEO.http?.xRobotsTag ?? null);
 
       // Hreflang (compare by lang:href)
-      const mapList = (m?: Array<{ lang: string; href: string }>) =>
-        (m || []).map((x) => `${x.lang}:${x.href}`);
+      const mapList = (m?: Array<{ lang: string; href: string }>) => (m || []).map(x => `${x.lang}:${x.href}`);
       push('hreflang.map', mapList(noJsSEO.hreflangMap), mapList(renderedSEO.hreflangMap), sameSet);
 
       // Content stats + similarity
       push('content.words', noJsWords, renderedWords);
       const textSimilarity = Number(jaccard(noJsText, renderedText).toFixed(3));
-      const keyChanges = diffs.filter((d) => !d.same);
+      const keyChanges = diffs.filter(d => !d.same);
 
-      return NextResponse.json(
-        {
-          ok: true,
-          data: {
-            noJs: {
-              url: noJsUrl,
-              status: noJsSEO.http?.status ?? baseResp.statusCode,
-              domSize: noJsDom,
-              words: noJsWords,
-            },
-            rendered: {
-              url: renderedUrl,
-              status: renderedSEO.http?.status ?? renderedStatus ?? null,
-              domSize: renderedDom,
-              words: renderedWords,
-            },
-            summary: {
-              textSimilarity,
-              domDelta: renderedDom - noJsDom,
-              wordsDelta: renderedWords - noJsWords,
-              keyChangesCount: keyChanges.length,
-            },
-            diffs,
+      return NextResponse.json({
+        ok: true,
+        data: {
+          noJs:     { url: noJsUrl,     status: noJsSEO.http?.status ?? baseResp.statusCode, domSize: noJsDom,     words: noJsWords },
+          rendered: { url: renderedUrl, status: renderedSEO.http?.status ?? renderedStatus ?? null, domSize: renderedDom, words: renderedWords },
+          summary:  {
+            textSimilarity,
+            domDelta:   renderedDom - noJsDom,
+            wordsDelta: renderedWords - noJsWords,
+            keyChangesCount: keyChanges.length,
           },
-        },
-        { headers: { 'cache-control': 'no-store' } },
-      );
+          diffs,
+        }
+      }, { headers: { 'cache-control': 'no-store' } });
     } finally {
       await browser.close().catch(() => {});
     }
