@@ -318,7 +318,7 @@ export default function ResultCard({ data }: { data: any }) {
       )}
 
       {tab === "performance" && <PsiCard url={data.finalUrl || data.url} />}
-       <CwvCard url={data.finalUrl || data.url} />
+     
     </div>
   );
 }
