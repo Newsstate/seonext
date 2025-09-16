@@ -1,8 +1,17 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
 type HreflangBack = { lang: string; href: string; ok: boolean };
 type InRef = { url:string; anchor:string; nofollow:boolean };
+type AssetInfo = {
+  url: string;
+  type: 'script' | 'style' | 'image' | 'font' | 'media' | 'preload' | 'other';
+  status?: number;
+  contentType?: string | null;
+  bytes?: number | null;
+  thirdParty: boolean;
+  blocking?: boolean;
+};
 
 type Data = {
   source: { url:string; finalUrl:string; status:number };
@@ -29,12 +38,26 @@ type Data = {
     found: number;
     referrers: InRef[];
   };
+  links: {
+    nonAmp: { total:number; list:string[] };
+    amp: { total:number; list:string[] } | null;
+  };
+  heavy: {
+    page: { scanned:number; top10:AssetInfo[]; total:number; assets:AssetInfo[] };
+    amp: { scanned:number; top10:AssetInfo[]; total:number; assets:AssetInfo[] } | null;
+  };
 };
+
+function fmtKB(n?: number | null) {
+  if (n == null) return '—';
+  return `${(n/1024).toFixed(1)} KB`;
+}
 
 export default function TouchpointsCard({ url }:{ url:string }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string|null>(null);
   const [res, setRes] = useState<Data|null>(null);
+  const [showAllLinks, setShowAllLinks] = useState<'nonamp'|'amp'|null>(null);
 
   const run = async () => {
     setLoading(true); setErr(null); setRes(null);
@@ -59,6 +82,15 @@ export default function TouchpointsCard({ url }:{ url:string }) {
     </span>
   );
 
+  const linkDiff = useMemo(()=>{
+    if (!res?.links) return null;
+    const A = new Set(res.links.nonAmp.list || []);
+    const B = new Set(res.links.amp?.list || []);
+    const inAmpNotInPage = res.links.amp ? res.links.amp.list.filter(u => !A.has(u)) : [];
+    const inPageNotInAmp = res.links.nonAmp.list.filter(u => !B.has(u));
+    return { inAmpNotInPage: inAmpNotInPage.slice(0, 100), inPageNotInAmp: inPageNotInAmp.slice(0, 100) };
+  }, [res]);
+
   return (
     <div className="card p-5 space-y-4">
       <div className="flex items-center justify-between">
@@ -72,6 +104,7 @@ export default function TouchpointsCard({ url }:{ url:string }) {
 
       {res && (
         <>
+          {/* Basics */}
           <div className="kv">
             <div className="k">Final URL</div><div className="v break-all">{res.source.finalUrl}</div>
             <div className="k">HTTP Status</div><div className="v">{res.source.status}</div>
@@ -93,15 +126,13 @@ export default function TouchpointsCard({ url }:{ url:string }) {
             <div className="v">
               {res.canonical.pageCanonical || '—'}
               {res.canonical.target?.url && (
-                <>
-                  <div className="text-xs text-gray-600 mt-1">
-                    Target: {res.canonical.target.url} ({res.canonical.target.status ?? '—'})
-                    <Badge ok={!!res.canonical.target.selfCanonical} textYes="Self-canonical" textNo="Not self" />
-                    {res.canonical.target.loopBack !== undefined && (
-                      <Badge ok={!res.canonical.target.loopBack} textYes="No loop" textNo="Loop!" />
-                    )}
-                  </div>
-                </>
+                <div className="text-xs text-gray-600 mt-1">
+                  Target: {res.canonical.target.url} ({res.canonical.target.status ?? '—'})
+                  <Badge ok={!!res.canonical.target.selfCanonical} textYes="Self-canonical" textNo="Not self" />
+                  {res.canonical.target.loopBack !== undefined && (
+                    <Badge ok={!res.canonical.target.loopBack} textYes="No loop" textNo="Loop!" />
+                  )}
+                </div>
               )}
             </div>
 
@@ -126,7 +157,7 @@ export default function TouchpointsCard({ url }:{ url:string }) {
             </div>
           </div>
 
-          {/* NEW: Internal Referrers via Sitemap sampling */}
+          {/* Internal Referrers */}
           <div>
             <h4 className="font-medium mb-2">Internal Referrers (sampled from sitemap)</h4>
             <div className="text-xs text-gray-600 mb-2">
@@ -145,34 +176,89 @@ export default function TouchpointsCard({ url }:{ url:string }) {
             ) : <div className="text-sm text-gray-600">No referrers found in sampled pages.</div>}
           </div>
 
-          {!!res.pointers.parameterizedLinksSample.length && (
-            <div>
-              <h4 className="font-medium mb-2">Potential “trap” links (params)</h4>
-              <ul className="list-disc pl-6 space-y-1">
-                {res.pointers.parameterizedLinksSample.map((u, i)=>(
-                  <li key={i} className="break-all">{u}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* NEW: Links on Non-AMP vs AMP */}
+          <div>
+            <h4 className="font-medium mb-2">All Links (Non-AMP vs AMP)</h4>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="p-3 rounded border">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium">Non-AMP Links</div>
+                  <div className="text-xs text-gray-600">{res.links.nonAmp.total} total</div>
+                </div>
+                <button className="btn mt-2" onClick={()=>setShowAllLinks(showAllLinks==='nonamp' ? null : 'nonamp')}>
+                  {showAllLinks==='nonamp' ? 'Hide list' : 'Show list'}
+                </button>
+                {showAllLinks==='nonamp' && (
+                  <ul className="list-disc pl-6 mt-2 space-y-1 max-h-64 overflow-auto">
+                    {res.links.nonAmp.list.map((u,i)=>(<li key={i} className="break-all">{u}</li>))}
+                  </ul>
+                )}
+              </div>
 
-          {!!res.conflicts.length && (
-            <div>
-              <h4 className="font-medium mb-2">Conflicts</h4>
-              <ul className="list-disc pl-6 space-y-1">
-                {res.conflicts.map((c, i)=>(
-                  <li key={i} className="text-amber-700">{c}</li>
-                ))}
-              </ul>
+              <div className="p-3 rounded border">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium">AMP Links</div>
+                  <div className="text-xs text-gray-600">{res.links.amp ? res.links.amp.total : 0} total</div>
+                </div>
+                {res.links.amp ? (
+                  <>
+                    <button className="btn mt-2" onClick={()=>setShowAllLinks(showAllLinks==='amp' ? null : 'amp')}>
+                      {showAllLinks==='amp' ? 'Hide list' : 'Show list'}
+                    </button>
+                    {showAllLinks==='amp' && (
+                      <ul className="list-disc pl-6 mt-2 space-y-1 max-h-64 overflow-auto">
+                        {res.links.amp.list.map((u,i)=>(<li key={i} className="break-all">{u}</li>))}
+                      </ul>
+                    )}
+                  </>
+                ) : <div className="text-sm text-gray-600 mt-2">No AMP version detected.</div>}
+              </div>
             </div>
-          )}
 
-          <details className="mt-3">
-            <summary className="cursor-pointer select-none text-sm text-gray-700">All outbound touchpoints</summary>
-            <pre className="code mt-2">{JSON.stringify(res.pointers, null, 2)}</pre>
-          </details>
-        </>
-      )}
-    </div>
-  );
-}
+            {/* Diffs */}
+            {res.links.amp && linkDiff && (
+              <div className="grid md:grid-cols-2 gap-4 mt-4">
+                <div className="p-3 rounded border">
+                  <div className="font-medium mb-1">Present in AMP, not in Non-AMP</div>
+                  {linkDiff.inAmpNotInPage.length ? (
+                    <ul className="list-disc pl-6 space-y-1 max-h-48 overflow-auto">
+                      {linkDiff.inAmpNotInPage.map((u,i)=>(<li key={i} className="break-all text-amber-700">{u}</li>))}
+                    </ul>
+                  ) : <div className="text-sm text-gray-600">—</div>}
+                </div>
+                <div className="p-3 rounded border">
+                  <div className="font-medium mb-1">Present in Non-AMP, not in AMP</div>
+                  {linkDiff.inPageNotInAmp.length ? (
+                    <ul className="list-disc pl-6 space-y-1 max-h-48 overflow-auto">
+                      {linkDiff.inPageNotInAmp.map((u,i)=>(<li key={i} className="break-all text-amber-700">{u}</li>))}
+                    </ul>
+                  ) : <div className="text-sm text-gray-600">—</div>}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* NEW: Heavy Assets */}
+          <div>
+            <h4 className="font-medium mb-2">Heavy Assets (by size)</h4>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="p-3 rounded border">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium">Non-AMP page</div>
+                  <div className="text-xs text-gray-600">scanned {res.heavy.page.scanned}</div>
+                </div>
+                <table className="w-full text-sm mt-2">
+                  <thead>
+                    <tr className="text-left border-b">
+                      <th className="py-1 pr-2">Type</th>
+                      <th className="py-1 pr-2">KB</th>
+                      <th className="py-1 pr-2">Status</th>
+                      <th className="py-1 pr-2">3rd</th>
+                      <th className="py-1 pr-2">Blocking</th>
+                      <th className="py-1">URL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {res.heavy.page.top10.map((a, i)=>(
+                      <tr key={i} className="border-b last:border-0 align-top">
