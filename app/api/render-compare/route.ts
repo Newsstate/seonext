@@ -4,6 +4,7 @@ import got from 'got';
 import * as cheerio from 'cheerio';
 import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
+import path from 'path';
 import { parseSEO, extractMainText, jaccard } from '@/lib/seo';
 
 export const runtime = 'nodejs';
@@ -22,41 +23,36 @@ const sameSet = (a?: string[], b?: string[]) => {
 };
 const domSize = (html: string) => cheerio.load(html)('*').length;
 
-function isServerless() {
-  return !!(process.env.AWS_REGION || process.env.VERCEL);
-}
-
-async function resolveExecutablePath() {
-  // Prefer Lambda/Vercel-friendly Chromium
-  const lambdaPath = await chromium.executablePath();
-  if (lambdaPath) return lambdaPath;
-
-  // Local/dev fallback via env
-  if (process.env.CHROME_PATH) return process.env.CHROME_PATH!;
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH!;
-
-  // Common local paths (best-effort; optional)
-  const guesses =
-    process.platform === 'darwin'
-      ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
-      : process.platform === 'win32'
-      ? [
-          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        ]
-      : ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium'];
-
-  // We can’t fs.stat here reliably without bundling, so just return first guess;
-  // if incorrect, Puppeteer will throw with a clear message.
-  return guesses[0];
-}
-
 async function launchBrowser() {
-  const executablePath = await resolveExecutablePath();
+  const executablePath = await chromium.executablePath();
+
+  // Point the dynamic linker to Chromium’s extracted lib dir.
+  // On Vercel/AWS, @sparticuz/chromium expands to /tmp/chromium*
+  if (executablePath) {
+    const execDir = path.dirname(executablePath);
+    const ld = [
+      execDir,
+      '/usr/lib64',
+      '/usr/lib',
+      '/lib64',
+      '/lib',
+      process.env.LD_LIBRARY_PATH || '',
+    ].filter(Boolean);
+    process.env.LD_LIBRARY_PATH = ld.join(':');
+  }
+
   return puppeteer.launch({
-    args: chromium.args,
+    args: [
+      ...chromium.args,
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--single-process',
+      '--no-zygote',
+    ],
     defaultViewport: chromium.defaultViewport,
-    executablePath,
+    executablePath: executablePath || process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH,
     headless: chromium.headless ?? true,
     ignoreHTTPSErrors: true,
   });
@@ -64,21 +60,16 @@ async function launchBrowser() {
 
 export async function POST(req: NextRequest) {
   try {
-    const {
-      url,
-      waitUntil = 'networkidle2',
-      renderTimeoutMs = 25000,
-    } = (await req.json()) as {
-      url: string;
-      waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2';
-      renderTimeoutMs?: number;
-    };
+    const { url, waitUntil = 'networkidle2', renderTimeoutMs = 25000 } =
+      (await req.json()) as {
+        url: string;
+        waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2';
+        renderTimeoutMs?: number;
+      };
 
-    if (!url) {
-      return NextResponse.json({ ok: false, error: 'Missing url' }, { status: 400 });
-    }
+    if (!url) return NextResponse.json({ ok: false, error: 'Missing url' }, { status: 400 });
 
-    // ---- No-JS fetch (origin HTML) ----
+    // ---- No-JS fetch ----
     const baseResp = await got(url, {
       followRedirect: true,
       throwHttpErrors: false,
@@ -90,14 +81,9 @@ export async function POST(req: NextRequest) {
           'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
       },
     });
-
     if (baseResp.statusCode >= 400) {
-      return NextResponse.json(
-        { ok: false, error: `Source returned ${baseResp.statusCode}` },
-        { status: 200 }
-      );
+      return NextResponse.json({ ok: false, error: `Source returned ${baseResp.statusCode}` }, { status: 200 });
     }
-
     const noJsUrl = baseResp.url;
     const noJsHtml = baseResp.body;
     const noJsSEO = parseSEO(noJsHtml, noJsUrl, baseResp.headers as any, baseResp.statusCode);
@@ -106,7 +92,7 @@ export async function POST(req: NextRequest) {
     const noJsDom = domSize(noJsHtml);
     const noJsWords = noJsSEO.contentStats?.words ?? noJsMain.words;
 
-    // ---- JS-rendered HTML (headless) ----
+    // ---- JS-rendered (headless) ----
     const browser = await launchBrowser();
     try {
       const page = await browser.newPage();
@@ -116,19 +102,14 @@ export async function POST(req: NextRequest) {
       );
 
       const resp = await page.goto(url, { waitUntil, timeout: renderTimeoutMs });
-      await new Promise((res) => setTimeout(res, 300)); // small settle
+      await new Promise((r) => setTimeout(r, 300));
 
       const renderedHtml = await page.content();
       const renderedUrl = page.url();
       const renderedStatus = resp?.status();
       const renderedHeaders = resp ? resp.headers() : {};
 
-      const renderedSEO = parseSEO(
-        renderedHtml,
-        renderedUrl,
-        renderedHeaders as any,
-        renderedStatus
-      );
+      const renderedSEO = parseSEO(renderedHtml, renderedUrl, renderedHeaders as any, renderedStatus);
       const renderedMain = extractMainText(renderedHtml);
       const renderedText = renderedMain.text;
       const renderedDom = domSize(renderedHtml);
@@ -197,7 +178,7 @@ export async function POST(req: NextRequest) {
             keyChangesCount: keyChanges.length,
           },
           diffs,
-        }
+        },
       }, { headers: { 'cache-control': 'no-store' } });
     } finally {
       await browser.close().catch(() => {});
