@@ -14,6 +14,10 @@ export const runtime = 'nodejs';
 type Step =
   | 'overview'
   | 'content'
+  | 'contentAnalysis'   // ← NEW
+  | 'plagiarism'        // ← NEW
+  | 'seoOptimization'   // ← NEW
+  | 'spamSignals'       // ← NEW
   | 'headings'
   | 'images'
   | 'links'
@@ -148,33 +152,38 @@ export async function GET(req: NextRequest) {
         done('meta', (pct += inc.meta));
 
 
-        // --- CONTENT ANALYSIS ---
-start("contentAnalysis", "Analyzing content length, language & readability", pct + 1);
-let _analysis;
+       // --- CONTENT ANALYSIS ---
+start('contentAnalysis', 'Analyzing content length, language & readability', pct + 1);
+let analysis;
 try {
-  _analysis = await runContentAnalysis({
-    html: htmlString, // your fetched HTML variable
+  analysis = await runContentAnalysis({
+    html: body, // ← use fetched HTML
     url,
     title: parsed.title,
-    h1: (parsed.headingsList || []).find(h => h.level === "h1")?.text,
+    h1: (parsed.headingsList || []).find(h => h.level === 'h1')?.text,
     metaDescription: parsed.metaDescription,
     images: parsed.images,
     internalLinkCount: parsed.links?.internal ?? 0,
   });
-  (result as any).contentAnalysis = _analysis;
-} catch (e) {
-  // safe fallback
-  (result as any).contentAnalysis = undefined;
+  (parsed as any).contentAnalysis = analysis; // ← assign to parsed
+} catch {
+  (parsed as any).contentAnalysis = undefined;
 }
-done("contentAnalysis", pct += 3);
+done('contentAnalysis', pct += 3);
 
 // --- PLAGIARISM ---
-start("plagiarism", "Checking plagiarism (EN/HI snippets)", pct + 1);
-try {
-  // plagiarism already executed inside runContentAnalysis; split stage visually
-  // No-op; we just show a stage
-} catch {}
-done("plagiarism", pct += 2);
+start('plagiarism', 'Checking plagiarism (EN/HI snippets)', pct + 1);
+// (runContentAnalysis already did the check; this stage is for streaming UX)
+done('plagiarism', pct += 2);
+
+// --- SEO OPTIMIZATION ---
+start('seoOptimization', 'Scoring SEO optimization (keywords & on-page signals)', pct + 1);
+done('seoOptimization', pct += 2);
+
+// --- SPAM SIGNALS ---
+start('spamSignals', 'Scanning spam signals (stuffing/hidden text/doorway)', pct + 1);
+done('spamSignals', pct += 2);
+
 
 // --- SEO OPTIMIZATION ---
 start("seoOptimization", "Scoring SEO optimization (keywords & on-page signals)", pct + 1);
@@ -324,4 +333,5 @@ done("spamSignals", pct += 2);
     },
   });
 }
+
 
