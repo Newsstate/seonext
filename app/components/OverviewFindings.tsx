@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import type { SEOResult } from '@/lib/seo';
+import type { SEOResult, SecurityHeaders } from '@/lib/seo';
 
 function Row({
   icon = '⚠️',
@@ -36,36 +36,42 @@ function Row({
 }
 
 export default function OverviewFindings({ data }: { data: SEOResult }) {
-  const sec = data.http?.security || {};
+  // ---- Security header checks (typed safely) ----
+  const sec: Partial<SecurityHeaders> = (data.http?.security ?? {}) as Partial<SecurityHeaders>;
   const missingHeaders: string[] = [];
-  if (data.http?.scheme === 'https' && !sec.hsts) missingHeaders.push('Strict-Transport-Security (HSTS)');
-  if (!sec.csp) missingHeaders.push('Content-Security-Policy');
-  if (!sec.xContentTypeOptions) missingHeaders.push('X-Content-Type-Options');
-  if (!sec.xFrameOptions) missingHeaders.push('X-Frame-Options');
-  if (!sec.referrerPolicy) missingHeaders.push('Referrer-Policy');
+  if (data.http?.scheme === 'https' && !sec?.hsts) missingHeaders.push('Strict-Transport-Security (HSTS)');
+  if (!sec?.csp) missingHeaders.push('Content-Security-Policy');
+  if (!sec?.xContentTypeOptions) missingHeaders.push('X-Content-Type-Options');
+  if (!sec?.xFrameOptions) missingHeaders.push('X-Frame-Options');
+  if (!sec?.referrerPolicy) missingHeaders.push('Referrer-Policy');
 
+  // ---- Title/description ----
   const badTitle = data.titleLength < 30 || data.titleLength > 65;
   const badDesc = data.descriptionLength < 70 || data.descriptionLength > 160;
 
-  const images = data.imagesList || [];
+  // ---- Images (defensive defaults) ----
+  const images = data.imagesList ?? [];
   const missingAlt = images.filter(i => !i.alt);
   const missingDim = images.filter(i => !i.width || !i.height);
-  const notLazy  = images.filter(i => (i.loading || '').toLowerCase() !== 'lazy');
+  const notLazy  = images.filter(i => (i.loading ?? '').toLowerCase() !== 'lazy');
 
-  const rb = data.renderBlocking || { stylesheets: 0, scriptsHeadBlocking: 0, scriptsTotal: 0 };
-  const rbCss  = data.renderBlockingUrls?.stylesheets || [];
-  const rbHead = data.renderBlockingUrls?.scriptsHeadBlocking || [];
+  // ---- Render-blocking (defensive defaults) ----
+  const rb = data.renderBlocking ?? { stylesheets: 0, scriptsHeadBlocking: 0, scriptsTotal: 0 };
+  const rbCss  = data.renderBlockingUrls?.stylesheets ?? [];
+  const rbHead = data.renderBlockingUrls?.scriptsHeadBlocking ?? [];
 
-  const manyLinks = (data.links?.total || 0) > 300;
-  const linksSample = data.linksSample || []; // [{href, internal, rel?}]
+  // ---- Links sample when very large pages ----
+  const manyLinks = (data.links?.total ?? 0) > 300;
+  const linksSample = data.linksSample ?? [];
 
-  const duplicate = data.duplication && data.duplication.similarity !== undefined;
+  // ---- Duplication info (optional) ----
+  const duplicate = !!(data.duplication && data.duplication.similarity !== undefined);
 
   return (
     <div className="card p-4">
       <h3 className="text-lg font-semibold mb-2">All Findings</h3>
 
-      {/* Security headers (list) */}
+      {/* Security headers */}
       <Row title="Security headers missing" count={missingHeaders.length}>
         {missingHeaders.length ? (
           <ul className="list-disc pl-6 text-sm">
@@ -74,7 +80,7 @@ export default function OverviewFindings({ data }: { data: SEOResult }) {
         ) : <div className="text-sm text-green-600">All key headers present.</div>}
       </Row>
 
-      {/* Title / Description with actual strings */}
+      {/* Title / Description */}
       <Row title={`Title length ${badTitle ? 'suboptimal' : 'OK'} (${data.titleLength})`}>
         <div className="text-sm break-words">
           <code className="bg-gray-100 px-1 rounded">{data.title || '(missing)'}</code>
@@ -104,7 +110,7 @@ export default function OverviewFindings({ data }: { data: SEOResult }) {
       </Row>
 
       {/* Links (sample) */}
-      <Row title={`Large number of links on page (${data.links?.total || 0})`} count={manyLinks ? linksSample.length : 0}>
+      <Row title={`Large number of links on page (${data.links?.total ?? 0})`} count={manyLinks ? linksSample.length : 0}>
         {manyLinks ? (
           <ul className="list-disc pl-6 text-sm break-all">
             {linksSample.map((l, idx) => (
@@ -135,13 +141,15 @@ export default function OverviewFindings({ data }: { data: SEOResult }) {
       {/* Social meta quick checks */}
       {!data.twitter['twitter:card'] && (
         <Row title="Missing twitter:card">
-          <div className="text-sm text-gray-600">Add <code className="bg-gray-100 px-1 rounded">meta name="twitter:card"</code> (summary or summary_large_image).</div>
+          <div className="text-sm text-gray-600">
+            Add <code className="bg-gray-100 px-1 rounded">meta name="twitter:card"</code> (summary or summary_large_image).
+          </div>
         </Row>
       )}
 
       {/* Duplicate content */}
       {duplicate && (
-        <Row title={`Content near-duplicate (similarity ${(data.duplication!.similarity!*100).toFixed(0)}%)`}>
+        <Row title={`Content near-duplicate (similarity ${(data.duplication!.similarity! * 100).toFixed(0)}%)`}>
           {data.duplication?.comparedUrl ? (
             <a href={data.duplication!.comparedUrl} target="_blank" rel="noreferrer" className="underline text-sm break-all">
               {data.duplication!.comparedUrl}
