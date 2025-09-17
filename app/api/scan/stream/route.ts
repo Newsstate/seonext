@@ -131,15 +131,35 @@ export async function GET(req: NextRequest) {
         done('images', pct += inc.images);
 
         // 5) LINKS (+ parse everything)
-        start('links', 'Parsing DOM & links', pct + 3);
-        const parsed = parseSEO(body, url, headers, resp.statusCode);
-        parsed.finalUrl = finalUrl;
-        parsed.redirected = parsed.finalUrl !== url;
+       // 5) LINKS (+ parse everything)
+start('links', 'Parsing DOM & links', pct + 3);
+const parsed = parseSEO(body, url, headers, resp.statusCode);
+parsed.finalUrl = finalUrl;
+parsed.redirected = parsed.finalUrl !== url;
 
-        const internalLinks = parsed.links?.filter((l: any) => l.internal).length ?? 0;
-        const externalLinks = parsed.links?.filter((l: any) => !l.internal).length ?? 0;
-        start('links', `Classified ${internalLinks} internal / ${externalLinks} external`, pct + 3);
-        done('links', pct += inc.links);
+// Support both shapes: summary object (current) OR array (future-proof)
+let internalLinks = 0, externalLinks = 0;
+const pAny = parsed as any;
+
+if (Array.isArray(pAny.linkList)) {
+  internalLinks = pAny.linkList.filter((l: any) => l.internal).length;
+  externalLinks = pAny.linkList.filter((l: any) => !l.internal).length;
+} else if (Array.isArray(pAny.links)) {
+  internalLinks = pAny.links.filter((l: any) => l.internal).length;
+  externalLinks = pAny.links.filter((l: any) => !l.internal).length;
+} else if (pAny.links && typeof pAny.links === 'object') {
+  // current shape from parseSEO(): { total, internal, external, nofollow }
+  internalLinks = Number(pAny.links.internal) || 0;
+  externalLinks = Number(pAny.links.external) || 0;
+}
+
+start(
+  'links',
+  `Classified ${internalLinks} internal / ${externalLinks} external`,
+  pct + 3
+);
+done('links', (pct += inc.links));
+
 
         // 6) META
         start('meta', 'Title & Description', pct + 3);
@@ -282,3 +302,4 @@ export async function GET(req: NextRequest) {
     },
   });
 }
+
