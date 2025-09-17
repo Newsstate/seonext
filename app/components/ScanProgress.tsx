@@ -36,7 +36,6 @@ export function ScanProgress({
   return (
     <div className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b">
       <div className="max-w-5xl mx-auto px-4 py-3">
-        {/* bar */}
         <div className="flex items-center gap-3">
           <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
             <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: '#3b82f6' }} />
@@ -44,10 +43,9 @@ export function ScanProgress({
           <span className="text-sm tabular-nums">{pct}%</span>
         </div>
 
-        {/* pills */}
         <div className="flex flex-wrap gap-2 mt-2">
           {STEPS.map((s) => {
-            const st: Status = state[s.key] ?? 'pending';
+            const st = state[s.key] ?? 'pending';
             const cls =
               st === 'done' ? 'bg-green-500 text-white' :
               st === 'active' ? 'bg-blue-500 text-white animate-pulse' :
@@ -61,7 +59,6 @@ export function ScanProgress({
           })}
         </div>
 
-        {/* substep */}
         {substep ? <div className="mt-2 text-xs text-gray-600">{substep}</div> : null}
       </div>
     </div>
