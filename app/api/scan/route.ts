@@ -5,8 +5,7 @@ import * as cheerio from 'cheerio';
 
 export const runtime = 'nodejs';
 
-// --- Add near top of scan route (with other helpers) ---
-import * as cheerio from 'cheerio';
+/* ---------------- helpers for lists shown under All Findings ---------------- */
 
 const normalizeUrl = (href: string, baseUrl: string) => {
   try {
@@ -15,7 +14,9 @@ const normalizeUrl = (href: string, baseUrl: string) => {
     if (u.pathname !== '/' && u.pathname.endsWith('/')) u.pathname = u.pathname.replace(/\/+$/, '');
     u.hostname = u.hostname.toLowerCase();
     return u.toString();
-  } catch { return ''; }
+  } catch {
+    return '';
+  }
 };
 const cap = <T,>(arr: T[], n = 200) => (arr.length > n ? arr.slice(0, n) : arr);
 
@@ -30,6 +31,7 @@ function extractImagesMissingAlt(html: string, baseUrl: string) {
   });
   return Array.from(out);
 }
+
 function extractImagesNoLazy(html: string, baseUrl: string) {
   const $ = cheerio.load(html); const out = new Set<string>();
   $('img').each((_, el) => {
@@ -43,6 +45,7 @@ function extractImagesNoLazy(html: string, baseUrl: string) {
   });
   return Array.from(out);
 }
+
 function extractImagesNoSize(html: string, baseUrl: string) {
   const $ = cheerio.load(html); const out = new Set<string>();
   $('img').each((_, el) => {
@@ -56,6 +59,7 @@ function extractImagesNoSize(html: string, baseUrl: string) {
   });
   return Array.from(out);
 }
+
 function extractBlockingHeadScripts(html: string, baseUrl: string) {
   const $ = cheerio.load(html); const out: string[] = [];
   $('head script').each((_, el) => {
@@ -64,6 +68,7 @@ function extractBlockingHeadScripts(html: string, baseUrl: string) {
     const hasAsync = $(el).is('[async]'); const hasDefer = $(el).is('[defer]');
     const blocks = !isModule && !hasAsync && !hasDefer;
     if (!blocks) return;
+
     const src = String($(el).attr('src') || '').trim();
     if (src) {
       const abs = normalizeUrl(src, baseUrl);
@@ -75,6 +80,7 @@ function extractBlockingHeadScripts(html: string, baseUrl: string) {
   });
   return out;
 }
+
 function extractAllLinks(html: string, baseUrl: string) {
   const $ = cheerio.load(html); const out = new Set<string>();
   const baseHref = $('base[href]').attr('href');
@@ -86,6 +92,8 @@ function extractAllLinks(html: string, baseUrl: string) {
   });
   return Array.from(out);
 }
+
+/* --------------------------------------------------------------------------- */
 
 async function fetchHtml(url: string, ua: string) {
   const r = await got(url, {
@@ -139,6 +147,16 @@ export async function POST(req: NextRequest) {
         else if (risk === 'medium') parsed._warnings.push(`Content similarity with canonical (${sim.toFixed(2)}).`);
       } catch { /* ignore */ }
     }
+
+    // >>> NEW: details arrays used by Overview → All Findings expanders
+    const baseForLists = parsed.finalUrl || url;
+    (parsed as any).details = {
+      imagesMissingAlt:     cap(extractImagesMissingAlt(resp.body, baseForLists), 200),
+      imagesNoLazy:         cap(extractImagesNoLazy(resp.body, baseForLists), 200),
+      imagesNoSize:         cap(extractImagesNoSize(resp.body, baseForLists), 200),
+      scriptsHeadBlocking:  cap(extractBlockingHeadScripts(resp.body, baseForLists), 200),
+      linksAll:             cap(extractAllLinks(resp.body, baseForLists), 400),
+    };
 
     // score
     parsed.score = scoreFrom(parsed);
