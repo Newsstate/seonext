@@ -13,13 +13,13 @@ import CanonicalizeCard from "./CanonicalizeCard";
 import ImageAuditCard from "./ImageAuditCard";
 import HeadersCard from "./HeadersCard";
 import AmpCard from "./AmpCard";
-import RenderCompareCard from './RenderCompareCard';
-import CrawlHintsCard from './CrawlHintsCard';
-import TouchpointsCard from './TouchpointsCard';
-import OverviewFindings from './OverviewFindings';
+import RenderCompareCard from "./RenderCompareCard";
+import CrawlHintsCard from "./CrawlHintsCard";
+import TouchpointsCard from "./TouchpointsCard";
+import OverviewFindings from "./OverviewFindings";
+import ContentAnalysisTab from "@/components/ContentAnalysisTab";
 
-
-// NEW: details type for lists under findings
+// Optional: details type if you decide to pass lists later
 type Details = {
   imagesMissingAlt?: string[];
   imagesNoLazy?: string[];
@@ -29,24 +29,24 @@ type Details = {
 };
 
 export default function ResultCard({ data }: { data: any }) {
-  const [tab, setTab] = useState<string>("overview");
-  const Links = data.links || {};
-  const og = data.og || {};
-  const tw = data.twitter || {};
-
-  // NEW: make warnings/details easy to use below
-  const warnings: string[] = data?._warnings ?? [];
-  const details: Details = (data?.details ?? {}) as Details;
-
   const tabs = [
     { key: "overview", label: "Overview" },
-    { key: "content", label: "Content" },
+    { key: "content", label: "Content Analysis" }, // single content tab for analysis
     { key: "links", label: "Links" },
     { key: "structured", label: "Structured Data" },
     { key: "technical", label: "Technical" },
     { key: "indexing", label: "Indexing" },
     { key: "performance", label: "Performance" },
-  ];
+  ] as const;
+
+  type TabKey = typeof tabs[number]["key"];
+  const [active, setActive] = useState<TabKey>("overview");
+
+  const Links = data.links || {};
+  const og = data.og || {};
+  const tw = data.twitter || {};
+  const warnings: string[] = data?._warnings ?? [];
+  const details: Details = (data?.details ?? {}) as Details;
 
   const getStatusColor = (status: number | undefined) => {
     if (!status) return "bg-gray-100 text-gray-600";
@@ -64,232 +64,43 @@ export default function ResultCard({ data }: { data: any }) {
       : "bg-green-100 text-green-700";
   };
 
-  const TabNav = () => (
-    <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-2">
-      {tabs.map((t) => (
-        <button
-          key={t.key}
-          onClick={() => setTab(t.key)}
-          className={`px-4 py-2 rounded-t-xl text-sm font-medium transition-all duration-200 ${
-            tab === t.key
-              ? "bg-blue-50 text-blue-700 border-b-2 border-blue-500"
-              : "hover:bg-gray-50 text-gray-600"
-          }`}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
-
-  // NEW: tiny expand/collapse list helper
-  const ExpandList: React.FC<{label:string; items?:string[]}> = ({ label, items }) => {
-    const [open, setOpen] = React.useState(false);
-    if (!items || items.length === 0) return null;
-    return (
-      <div className="mt-2">
-        <button className="text-xs underline" onClick={()=>setOpen(!open)}>
-          {open ? 'Hide' : 'Show'} {label} ({items.length})
-        </button>
-        {open && (
-          <ul className="list-disc pl-6 mt-2 text-sm break-all">
-            {items.map((x,i)=>(
-              <li key={i}>
-                {/^https?:\/\//i.test(x) ? <a href={x} target="_blank" rel="noreferrer">{x}</a> : x}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className="bg-gray-50 rounded-2xl shadow-sm p-6 space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div className="space-y-1">
-          <div className="text-xs uppercase tracking-wide text-gray-400">
-            Scanned
-          </div>
+          <div className="text-xs uppercase tracking-wide text-gray-400">Scanned</div>
           <div className="text-lg font-semibold break-all text-gray-800">
             {data.finalUrl || data.url}
           </div>
           {data.redirected && data.finalUrl !== data.url && (
-            <div className="text-xs text-gray-500">
-              Redirected from: {data.url}
-            </div>
+            <div className="text-xs text-gray-500">Redirected from: {data.url}</div>
           )}
         </div>
         <ScorePills data={data} />
       </div>
 
-      <TabNav />
+      {/* Tabs */}
+      <nav className="flex gap-3 border-b">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setActive(t.key)}
+            className={`px-3 py-2 text-sm ${
+              active === t.key
+                ? "border-b-2 border-black font-semibold"
+                : "text-gray-500"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
 
-      {/* OVERVIEW TAB */}
-      {tab === "overview" && (
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* Basics */}
-          <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
-            <h3 className="text-lg font-semibold border-b pb-2">Basics</h3>
-            <div className="grid grid-cols-[130px_1fr] gap-y-3 gap-x-3 text-sm text-gray-700">
-              <div className="font-medium">Title</div>
-              <div>{data.title || <i>—</i>}</div>
-
-              <div className="font-medium">Description</div>
-              <div>{data.metaDescription || <i>—</i>}</div>
-
-              <div className="font-medium">Canonical</div>
-              <div className="flex flex-wrap gap-2 items-center">
-                {data.canonical || <i>—</i>}
-                {data.canonicalStatus && (
-                  <span
-                    className={`px-2 py-0.5 text-xs rounded-full ${
-                      data.canonicalStatus === "Valid"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-red-100 text-red-700"
-                    }`}
-                  >
-                    {data.canonicalStatus}
-                  </span>
-                )}
-              </div>
-
-              <div className="font-medium">HTTP Status</div>
-              <div>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
-                    data.http?.status
-                  )}`}
-                >
-                  {data.http?.status ?? "—"}
-                </span>
-              </div>
-
-              <div className="font-medium">X-Robots-Tag</div>
-              <div>{data.http?.xRobotsTag || <i>—</i>}</div>
-
-              <div className="font-medium">Robots</div>
-              <div>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRobotsColor(
-                    data.robotsMeta,
-                    data.robots
-                  )}`}
-                >
-                  {data.robotsMeta
-                    ? `${data.robotsMeta.index ? "index" : "noindex"}, ${
-                        data.robotsMeta.follow ? "follow" : "nofollow"
-                      }${data.robotsMeta.raw ? ` (${data.robotsMeta.raw})` : ""}`
-                    : data.robots || "—"}
-                </span>
-              </div>
-
-              <div className="font-medium">Viewport</div>
-              <div>{data.viewport || <i>—</i>}</div>
-
-              <div className="font-medium">Lang</div>
-              <div>{data.lang || <i>—</i>}</div>
-
-              <div className="font-medium">Headings</div>
-              <div>
-                H1 {data.h1Count ?? 0} · H2 {data.headings?.h2 ?? 0} · H3{" "}
-                {data.headings?.h3 ?? 0}
-              </div>
-
-              <div className="font-medium">Hreflang</div>
-              <div>{(data.hreflang || []).join(", ") || <i>—</i>}</div>
-            </div>
-          </section>
-
-          {/* Links & Images */}
-          <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
-            <h3 className="text-lg font-semibold border-b pb-2">
-              Links & Images
-            </h3>
-            <div className="grid grid-cols-[130px_1fr] gap-y-3 gap-x-3 text-sm text-gray-700">
-              <div className="font-medium">Links (Total)</div>
-              <div>{Links.total ?? 0}</div>
-
-              <div className="font-medium">Internal</div>
-              <div>{Links.internal ?? 0}</div>
-
-              <div className="font-medium">External</div>
-              <div>{Links.external ?? 0}</div>
-
-              <div className="font-medium">Nofollow</div>
-              <div>{Links.nofollow ?? 0}</div>
-
-              <div className="font-medium">Images (missing alt)</div>
-              <div>{data.images?.missingAlt ?? 0}</div>
-            </div>
-          </section>
-
-          {/* Findings */}
-          {(data._issues?.length || data._warnings?.length) && (
-            <section className="bg-white rounded-xl shadow-sm p-5 space-y-3 md:col-span-2">
-              <h3 className="text-lg font-semibold border-b pb-2">
-                All Findings
-              </h3>
-              <OverviewFindings data={data} />
-
-              <ul className="list-disc pl-6 space-y-1 text-sm">
-                {warnings.map((w: string, i: number) => {
-                  // match warnings that have lists we can show
-                  let items: string[] | undefined, label = '';
-                  if (/images?\s+missing\s+alt/i.test(w)) { items = details.imagesMissingAlt; label = 'images'; }
-                  else if (/images?\s+not\s+using\s+lazy\s+loading/i.test(w)) { items = details.imagesNoLazy; label = 'images'; }
-                  else if (/images?\s+missing\s+explicit\s+width\/height/i.test(w)) { items = details.imagesNoSize; label = 'images'; }
-                  else if (/render-blocking\s+scripts\s+in\s*<head>/i.test(w)) { items = details.scriptsHeadBlocking; label = 'scripts'; }
-                  else if (/large number of links/i.test(w)) { items = details.linksAll; label = 'links'; }
-
-                  return (
-                    <li key={"w" + i} className="text-amber-700">
-                      ⚠️ {w}
-                      {items && items.length > 0 && (
-                        <ExpandList label={`list of ${label}`} items={items} />
-                      )}
-                    </li>
-                  );
-                })}
-                {(data._issues || []).map((w: string, i: number) => (
-                  <li key={"e" + i} className="text-red-700">
-                    ❌ {w}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </div>
-      )}
-
-      {/* Other Tabs unchanged except styling */}
-      {tab === "content" && (
-        <>
-          <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
-            <h3 className="text-lg font-semibold border-b pb-2">Open Graph</h3>
-            <pre className="bg-gray-100 p-3 rounded-lg text-xs overflow-x-auto">
-              {JSON.stringify(og, null, 2)}
-            </pre>
-          </section>
-
-          <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
-            <h3 className="text-lg font-semibold border-b pb-2">Twitter</h3>
-            <pre className="bg-gray-100 p-3 rounded-lg text-xs overflow-x-auto">
-              {JSON.stringify(tw, null, 2)}
-            </pre>
-          </section>
-
-          <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
-            <h3 className="text-lg font-semibold border-b pb-2">Images Audit</h3>
-            <ImageAuditCard url={data.finalUrl || data.url} />
-            <h3 className="text-lg font-semibold mt-4 mb-3">Schema Types</h3>
-            <div>{(data.schemaTypes || []).join(", ") || <i>—</i>}</div>
-          </section>
-        </>
-      )}
-
-      {tab === "links" && (
+      {/* SWITCH */}
+      {active === "content" ? (
+        <ContentAnalysisTab data={data} />
+      ) : active === "links" ? (
         <>
           <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
             <h3 className="text-lg font-semibold border-b pb-2">Links</h3>
@@ -307,25 +118,21 @@ export default function ResultCard({ data }: { data: any }) {
               <div>{Links.nofollow ?? 0}</div>
             </div>
           </section>
-          {data.finalUrl || data.url ? (
-            <LinkCheckerCard url={data.finalUrl || data.url} />
-          ) : null}
-        </>
-      )}
 
-      {tab === "structured" && (
+          {/* If your LinkCheckerCard expects data, switch to data={data} */}
+          {data ? <LinkCheckerCard data={data} /> : null}
+        </>
+      ) : active === "structured" ? (
         <section className="bg-white rounded-xl shadow-sm p-5">
           <h3 className="text-lg font-semibold border-b pb-2">Schema Types</h3>
-          <div className="pt-2">{(data.schemaTypes || []).join(", ") || <i>—</i>}</div>
+          <div className="pt-2">
+            {(data.schemaTypes || []).join(", ") || <i>—</i>}
+          </div>
         </section>
-      )}
-
-      {tab === "technical" && (
+      ) : active === "technical" ? (
         <>
           <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
-            <h3 className="text-lg font-semibold border-b pb-2">
-              Technical Basics
-            </h3>
+            <h3 className="text-lg font-semibold border-b pb-2">Technical Basics</h3>
             <div className="grid grid-cols-[130px_1fr] gap-y-3 gap-x-3 text-sm text-gray-700">
               <div className="font-medium">Viewport</div>
               <div>{data.viewport || <i>—</i>}</div>
@@ -344,35 +151,158 @@ export default function ResultCard({ data }: { data: any }) {
                   {data.robotsMeta
                     ? `${data.robotsMeta.index ? "index" : "noindex"}, ${
                         data.robotsMeta.follow ? "follow" : "nofollow"
-                      }`
+                      }${data.robotsMeta.raw ? ` (${data.robotsMeta.raw})` : ""}`
                     : data.robots || "—"}
                 </span>
               </div>
             </div>
           </section>
-             
-          <TouchpointsCard url={data.finalUrl || data.url} />
-          <CrawlHintsCard url={data.finalUrl || data.url} />
-          <CanonicalizeCard url={data.finalUrl || data.url} />
-         <RenderCompareCard url={data.finalUrl || data.url} />
-          <AmpCard url={data.finalUrl || data.url} />
-          <RedirectsCard url={data.finalUrl || data.url} />
-          <RobotsCard url={data.finalUrl || data.url} />
-          <HeadersCard url={data.finalUrl || data.url} />
-        </>
-      )}
 
-      {tab === "indexing" && (
+          {/* These cards typically expect full `data`; if yours take `url`, adjust */}
+          <HeadersCard data={data} />
+          <ImageAuditCard data={data} />
+          <AmpCard data={data} />
+          <RenderCompareCard data={data} />
+          <CrawlHintsCard data={data} />
+          <TouchpointsCard data={data} />
+          <CanonicalizeCard data={data} />
+          <RedirectsCard data={data} />
+          <RobotsCard data={data} />
+        </>
+      ) : active === "indexing" ? (
         <>
-          <IndexingCard url={data.finalUrl || data.url} />
-          <SitemapCard url={data.finalUrl || data.url} />
-          <HreflangCard url={data.finalUrl || data.url} />
-          
+          <IndexingCard data={data} />
+          <SitemapCard data={data} />
+          <HreflangCard data={data} />
+          <CanonicalizeCard data={data} />
+          <RobotsCard data={data} />
+        </>
+      ) : active === "performance" ? (
+        <PsiCard data={data} />
+      ) : (
+        // OVERVIEW (default)
+        <>
+          {/* Basics */}
+          <div className="grid md:grid-cols-2 gap-6">
+            <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
+              <h3 className="text-lg font-semibold border-b pb-2">Basics</h3>
+              <div className="grid grid-cols-[130px_1fr] gap-y-3 gap-x-3 text-sm text-gray-700">
+                <div className="font-medium">Title</div>
+                <div>{data.title || <i>—</i>}</div>
+
+                <div className="font-medium">Description</div>
+                <div>{data.metaDescription || <i>—</i>}</div>
+
+                <div className="font-medium">Canonical</div>
+                <div className="flex flex-wrap gap-2 items-center">
+                  {data.canonical || <i>—</i>}
+                  {data.canonicalStatus && (
+                    <span
+                      className={`px-2 py-0.5 text-xs rounded-full ${
+                        data.canonicalStatus === "Valid"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      {data.canonicalStatus}
+                    </span>
+                  )}
+                </div>
+
+                <div className="font-medium">HTTP Status</div>
+                <div>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                      data.http?.status
+                    )}`}
+                  >
+                    {data.http?.status ?? "—"}
+                  </span>
+                </div>
+
+                <div className="font-medium">X-Robots-Tag</div>
+                <div>{data.http?.xRobotsTag || <i>—</i>}</div>
+
+                <div className="font-medium">Robots</div>
+                <div>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRobotsColor(
+                      data.robotsMeta,
+                      data.robots
+                    )}`}
+                  >
+                    {data.robotsMeta
+                      ? `${data.robotsMeta.index ? "index" : "noindex"}, ${
+                          data.robotsMeta.follow ? "follow" : "nofollow"
+                        }${data.robotsMeta.raw ? ` (${data.robotsMeta.raw})` : ""}`
+                      : data.robots || "—"}
+                  </span>
+                </div>
+
+                <div className="font-medium">Viewport</div>
+                <div>{data.viewport || <i>—</i>}</div>
+
+                <div className="font-medium">Lang</div>
+                <div>{data.lang || <i>—</i>}</div>
+
+                <div className="font-medium">Headings</div>
+                <div>
+                  H1 {data.h1Count ?? 0} · H2 {data.headings?.h2 ?? 0} · H3 {data.headings?.h3 ?? 0}
+                </div>
+
+                <div className="font-medium">Hreflang</div>
+                <div>{(data.hreflang || []).join(", ") || <i>—</i>}</div>
+              </div>
+            </section>
+
+            {/* Links & Images */}
+            <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
+              <h3 className="text-lg font-semibold border-b pb-2">Links & Images</h3>
+              <div className="grid grid-cols-[130px_1fr] gap-y-3 gap-x-3 text-sm text-gray-700">
+                <div className="font-medium">Links (Total)</div>
+                <div>{Links.total ?? 0}</div>
+
+                <div className="font-medium">Internal</div>
+                <div>{Links.internal ?? 0}</div>
+
+                <div className="font-medium">External</div>
+                <div>{Links.external ?? 0}</div>
+
+                <div className="font-medium">Nofollow</div>
+                <div>{Links.nofollow ?? 0}</div>
+
+                <div className="font-medium">Images (missing alt)</div>
+                <div>{data.images?.missingAlt ?? 0}</div>
+              </div>
+            </section>
+
+            {/* All Findings (single source) */}
+            {(data._issues?.length || data._warnings?.length) && (
+              <section className="bg-white rounded-xl shadow-sm p-5 space-y-3 md:col-span-2">
+                <h3 className="text-lg font-semibold border-b pb-2">All Findings</h3>
+                <OverviewFindings data={data} />
+              </section>
+            )}
+          </div>
+
+          {/* Optional extras on overview */}
+          <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
+            <h3 className="text-lg font-semibold border-b pb-2">Open Graph</h3>
+            <pre className="bg-gray-100 p-3 rounded-lg text-xs overflow-x-auto">
+              {JSON.stringify(og, null, 2)}
+            </pre>
+          </section>
+
+          <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
+            <h3 className="text-lg font-semibold border-b pb-2">Twitter</h3>
+            <pre className="bg-gray-100 p-3 rounded-lg text-xs overflow-x-auto">
+              {JSON.stringify(tw, null, 2)}
+            </pre>
+          </section>
+
+          <ImageAuditCard data={data} />
         </>
       )}
-
-      {tab === "performance" && <PsiCard url={data.finalUrl || data.url} />}
-     
     </div>
   );
 }
