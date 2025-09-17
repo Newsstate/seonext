@@ -20,7 +20,6 @@ function List({ items }: { items: string[] }) {
     </ul>
   );
 }
-
 export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
   const ca = data.contentAnalysis;
   if (!ca) return <div className="text-sm text-gray-600">No content analysis available.</div>;
