@@ -19,7 +19,6 @@ import TouchpointsCard from "./TouchpointsCard";
 import OverviewFindings from "./OverviewFindings";
 import ContentAnalysisTab from "@/components/ContentAnalysisTab";
 
-// Optional: details type if you decide to pass lists later
 type Details = {
   imagesMissingAlt?: string[];
   imagesNoLazy?: string[];
@@ -32,7 +31,7 @@ export default function ResultCard({ data }: { data: any }) {
   const tabs = [
     { key: "overview", label: "Overview" },
     { key: "contentAnalysis", label: "Content Analysis" }, // NEW
-    { key: "social", label: "Social" },                    // OG + Twitter (old Content tab)
+    { key: "social", label: "Social" },                    // OG + Twitter
     { key: "links", label: "Links" },
     { key: "structured", label: "Structured Data" },
     { key: "technical", label: "Technical" },
@@ -43,11 +42,13 @@ export default function ResultCard({ data }: { data: any }) {
   type TabKey = typeof tabs[number]["key"];
   const [active, setActive] = useState<TabKey>("overview");
 
+  const pageUrl: string = data.finalUrl || data.url;
   const Links = data.links || {};
   const og = data.og || {};
   const tw = data.twitter || {};
-  const warnings: string[] = data?._warnings ?? [];
-  const details: Details = (data?.details ?? {}) as Details;
+  // If you need later:
+  // const warnings: string[] = data?._warnings ?? [];
+  // const details: Details = (data?.details ?? {}) as Details;
 
   const getStatusColor = (status: number | undefined) => {
     if (!status) return "bg-gray-100 text-gray-600";
@@ -59,7 +60,7 @@ export default function ResultCard({ data }: { data: any }) {
 
   const getRobotsColor = (robotsMeta: any, robots: string) => {
     if (!robotsMeta && !robots) return "bg-gray-100 text-gray-600";
-    const isNoIndex = robotsMeta?.index === false || /noindex/i.test(robots);
+    const isNoIndex = robotsMeta?.index === false || /noindex/i.test(robots || "");
     return isNoIndex ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700";
   };
 
@@ -70,7 +71,7 @@ export default function ResultCard({ data }: { data: any }) {
         <div className="space-y-1">
           <div className="text-xs uppercase tracking-wide text-gray-400">Scanned</div>
           <div className="text-lg font-semibold break-all text-gray-800">
-            {data.finalUrl || data.url}
+            {pageUrl}
           </div>
           {data.redirected && data.finalUrl !== data.url && (
             <div className="text-xs text-gray-500">Redirected from: {data.url}</div>
@@ -116,7 +117,7 @@ export default function ResultCard({ data }: { data: any }) {
           </section>
 
           {/* Optional: keep image/schema bits with social if you like */}
-          <ImageAuditCard data={data} />
+          <ImageAuditCard url={pageUrl} />
           <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
             <h3 className="text-lg font-semibold border-b pb-2">Schema Types</h3>
             <div>{(data.schemaTypes || []).join(", ") || <i>—</i>}</div>
@@ -141,8 +142,7 @@ export default function ResultCard({ data }: { data: any }) {
             </div>
           </section>
 
-          {/* If your LinkCheckerCard expects `url`, switch prop accordingly */}
-          {data ? <LinkCheckerCard data={data} /> : null}
+          <LinkCheckerCard url={pageUrl} />
         </>
       ) : active === "structured" ? (
         <section className="bg-white rounded-xl shadow-sm p-5">
@@ -180,30 +180,29 @@ export default function ResultCard({ data }: { data: any }) {
             </div>
           </section>
 
-          <HeadersCard data={data} />
-          <ImageAuditCard data={data} />
-          <AmpCard data={data} />
-          <RenderCompareCard data={data} />
-          <CrawlHintsCard data={data} />
-          <TouchpointsCard data={data} />
-          <CanonicalizeCard data={data} />
-          <RedirectsCard data={data} />
-          <RobotsCard data={data} />
+          <HeadersCard url={pageUrl} />
+          <ImageAuditCard url={pageUrl} />
+          <AmpCard url={pageUrl} />
+          <RenderCompareCard url={pageUrl} />
+          <CrawlHintsCard url={pageUrl} />
+          <TouchpointsCard url={pageUrl} />
+          <CanonicalizeCard url={pageUrl} />
+          <RedirectsCard url={pageUrl} />
+          <RobotsCard url={pageUrl} />
         </>
       ) : active === "indexing" ? (
         <>
-          <IndexingCard data={data} />
-          <SitemapCard data={data} />
-          <HreflangCard data={data} />
-          <CanonicalizeCard data={data} />
-          <RobotsCard data={data} />
+          <IndexingCard url={pageUrl} />
+          <SitemapCard url={pageUrl} />
+          <HreflangCard url={pageUrl} />
+          <CanonicalizeCard url={pageUrl} />
+          <RobotsCard url={pageUrl} />
         </>
       ) : active === "performance" ? (
-        <PsiCard data={data} />
+        <PsiCard url={pageUrl} />
       ) : (
         // OVERVIEW (default)
         <>
-          {/* Basics */}
           <div className="grid md:grid-cols-2 gap-6">
             <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
               <h3 className="text-lg font-semibold border-b pb-2">Basics</h3>
@@ -276,7 +275,6 @@ export default function ResultCard({ data }: { data: any }) {
               </div>
             </section>
 
-            {/* Links & Images */}
             <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
               <h3 className="text-lg font-semibold border-b pb-2">Links & Images</h3>
               <div className="grid grid-cols-[130px_1fr] gap-y-3 gap-x-3 text-sm text-gray-700">
@@ -297,7 +295,6 @@ export default function ResultCard({ data }: { data: any }) {
               </div>
             </section>
 
-            {/* All Findings (single source) */}
             {(data._issues?.length || data._warnings?.length) && (
               <section className="bg-white rounded-xl shadow-sm p-5 space-y-3 md:col-span-2">
                 <h3 className="text-lg font-semibold border-b pb-2">All Findings</h3>
