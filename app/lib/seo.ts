@@ -116,6 +116,12 @@ export type SEOResult = {
   resourceHints: { dnsPrefetch: number; preconnect: number; preload: number };
   renderBlocking: { stylesheets: number; scriptsHeadBlocking: number; scriptsTotal: number };
 
+   renderBlockingUrls?: {
+    stylesheets: string[];
+    scriptsHeadBlocking: string[];
+  };
+   linksSample?: Array<{ href: string; internal: boolean; rel?: string }>;
+  
   favicon?: string;
   appleTouchIcon?: string;
   manifest?: string | undefined;
@@ -454,16 +460,28 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
   if (missingLoading > 0) warnings.push(`${missingLoading} images not using lazy loading.`);
 
   // Links
-  const anchors = $('a[href]'); let internal = 0, external = 0, nofollow = 0;
-  anchors.each((_, el) => {
-    const $a = $(el);
-    const href = String($a.attr('href') || '').trim(); if (!href) return;
-    const rel = String($a.attr('rel') || '').toLowerCase(); if (rel.includes('nofollow')) nofollow++;
-    try { const u = new URL(href, urlObj.origin);
-      if (/^https?:/.test(u.protocol)) { if (u.origin === urlObj.origin) internal++; else external++; }
-    } catch {}
-  });
-  if ((anchors.length || 0) > 300) warnings.push('Large number of links on page (>300).');
+ // Links
+const anchors = $('a[href]');
+let internal = 0, external = 0, nofollow = 0;
+const linksSample: Array<{ href: string; internal: boolean; rel?: string }> = [];
+
+anchors.each((_, el) => {
+  const $a = $(el);
+  const href = String($a.attr('href') || '').trim(); if (!href) return;
+  const rel = String($a.attr('rel') || '').toLowerCase(); if (rel.includes('nofollow')) nofollow++;
+  try {
+    const u = new URL(href, urlObj.origin);
+    if (/^https?:/.test(u.protocol)) {
+      const isInternal = (u.origin === urlObj.origin);
+      if (isInternal) internal++; else external++;
+      if (linksSample.length < 200) {
+        linksSample.push({ href: abs(urlObj, href)!, internal: isInternal, rel: rel || undefined });
+      }
+    }
+  } catch {}
+});
+if ((anchors.length || 0) > 300) warnings.push('Large number of links on page (>300).');
+
 
   // Mixed content (only relevant if page is HTTPS)
   let mixedCount = 0;
@@ -492,26 +510,47 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
     }
   }
 
-  // Resource hints / render blocking
-  const resourceHints = {
-    dnsPrefetch: $('link[rel="dns-prefetch"]').length,
-    preconnect: $('link[rel="preconnect"]').length,
-    preload: $('link[rel="preload"]').length
-  };
-  let blockingCSS = 0, blockingHeadScripts = 0, totalScripts = $('script').length;
-  $('link[rel="stylesheet"]').each((_, el)=>{
-    const $el = $(el);
-    const rel = String($el.attr('rel')||'').toLowerCase();
-    const media = String($el.attr('media')||'').trim();
-    const disabled = $el.attr('disabled') !== undefined;
-    if (rel === 'stylesheet' && !media && !disabled) blockingCSS++;
-  });
-  $('head script[src]').each((_, el)=>{
-    const a = $(el).attr() || {};
-    if (!('async' in a) && !('defer' in a)) blockingHeadScripts++;
-  });
-  if (blockingCSS > 3) warnings.push(`Many render-blocking stylesheets (${blockingCSS}).`);
-  if (blockingHeadScripts > 0) warnings.push(`Render-blocking scripts in <head> (${blockingHeadScripts}).`);
+ 
+ // Resource hints / render blocking
+// Resource hints / render blocking
+const resourceHints = {
+  dnsPrefetch: $('link[rel="dns-prefetch"]').length,
+  preconnect: $('link[rel="preconnect"]').length,
+  preload: $('link[rel="preload"]').length,
+};
+
+let blockingCSS = 0,
+  blockingHeadScripts = 0,
+  totalScripts = $('script').length;
+
+const blockingCssUrls: string[] = [];
+const blockingHeadScriptUrls: string[] = [];
+
+$('link[rel="stylesheet"]').each((_, el) => {
+  const $el = $(el);
+  const rel = String($el.attr('rel') || '').toLowerCase();
+  const media = String($el.attr('media') || '').trim();
+  const disabled = $el.attr('disabled') !== undefined;
+  if (rel === 'stylesheet' && !media && !disabled) {
+    blockingCSS++;
+    const href = String($el.attr('href') || '').trim();
+    if (href) blockingCssUrls.push(abs(urlObj, href)!);
+  }
+});
+
+$('head script[src]').each((_, el) => {
+  const a = $(el).attr() || {};
+  if (!('async' in a) && !('defer' in a)) {
+    blockingHeadScripts++;
+    const src = String($(el).attr('src') || '').trim();
+    if (src) blockingHeadScriptUrls.push(abs(urlObj, src)!);
+  }
+});
+
+if (blockingCSS > 3) warnings.push(`Many render-blocking stylesheets (${blockingCSS}).`);
+if (blockingHeadScripts > 0) warnings.push(`Render-blocking scripts in <head> (${blockingHeadScripts}).`);
+
+
 
   // Icons / PWA / AMP
   const favicon = abs(urlObj, $('link[rel="icon"]').attr('href') || $('link[rel="shortcut icon"]').attr('href'));
@@ -585,18 +624,31 @@ export function parseSEO(html: string, baseUrl: string, respHeaders?: Record<str
     images: { total: imgs.length, missingAlt, missingDimensions: missingDim, missingLoading },
     imagesList,
     mixedContent: mixedCount ? { total: mixedCount, samples: mixedSamples } : undefined, // Set to undefined if no mixed content
-    links: { total: anchors.length, internal, external, nofollow },
-    resourceHints,
-    renderBlocking: { stylesheets: blockingCSS, scriptsHeadBlocking: blockingHeadScripts, scriptsTotal: totalScripts },
-    favicon, appleTouchIcon, manifest, ampHtml,
-    og, twitter,
-    schemaTypes,
-    schemaAudit: {
-      Article: articleAudit,
-      Organization: orgAudit,
-      BreadcrumbList: breadcrumbAudit || { present:false }
-    },
-    _warnings: warnings,
-    _issues: issues
+   links: { total: anchors.length, internal, external, nofollow },
+linksSample,  // sample list for UI
+resourceHints,
+renderBlocking: {
+  stylesheets: blockingCSS,
+  scriptsHeadBlocking: blockingHeadScripts,
+  scriptsTotal: totalScripts,
+},
+renderBlockingUrls: {
+  stylesheets: blockingCssUrls,
+  scriptsHeadBlocking: blockingHeadScriptUrls,
+},
+favicon,
+appleTouchIcon,
+manifest,
+ampHtml,
+og,
+twitter,
+schemaTypes,
+schemaAudit: {
+  Article: articleAudit,
+  Organization: orgAudit,
+  BreadcrumbList: breadcrumbAudit || { present: false },
+},
+_warnings: warnings,
+_issues: issues,
   };
 }
