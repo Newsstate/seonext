@@ -16,6 +16,8 @@ import AmpCard from "./AmpCard";
 import RenderCompareCard from './RenderCompareCard';
 import CrawlHintsCard from './CrawlHintsCard';
 import TouchpointsCard from './TouchpointsCard';
+import OverviewFindings from './OverviewFindings';
+
 
 // NEW: details type for lists under findings
 type Details = {
@@ -229,6 +231,8 @@ export default function ResultCard({ data }: { data: any }) {
               <h3 className="text-lg font-semibold border-b pb-2">
                 All Findings
               </h3>
+              <OverviewFindings data={data} />
+
               <ul className="list-disc pl-6 space-y-1 text-sm">
                 {warnings.map((w: string, i: number) => {
                   // match warnings that have lists we can show
