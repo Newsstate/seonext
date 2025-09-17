@@ -31,7 +31,8 @@ type Details = {
 export default function ResultCard({ data }: { data: any }) {
   const tabs = [
     { key: "overview", label: "Overview" },
-    { key: "content", label: "Content Analysis" }, // single content tab for analysis
+    { key: "contentAnalysis", label: "Content Analysis" }, // NEW
+    { key: "social", label: "Social" },                    // OG + Twitter (old Content tab)
     { key: "links", label: "Links" },
     { key: "structured", label: "Structured Data" },
     { key: "technical", label: "Technical" },
@@ -59,9 +60,7 @@ export default function ResultCard({ data }: { data: any }) {
   const getRobotsColor = (robotsMeta: any, robots: string) => {
     if (!robotsMeta && !robots) return "bg-gray-100 text-gray-600";
     const isNoIndex = robotsMeta?.index === false || /noindex/i.test(robots);
-    return isNoIndex
-      ? "bg-red-100 text-red-700"
-      : "bg-green-100 text-green-700";
+    return isNoIndex ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700";
   };
 
   return (
@@ -98,8 +97,31 @@ export default function ResultCard({ data }: { data: any }) {
       </nav>
 
       {/* SWITCH */}
-      {active === "content" ? (
+      {active === "contentAnalysis" ? (
         <ContentAnalysisTab data={data} />
+      ) : active === "social" ? (
+        <>
+          <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
+            <h3 className="text-lg font-semibold border-b pb-2">Open Graph</h3>
+            <pre className="bg-gray-100 p-3 rounded-lg text-xs overflow-x-auto">
+              {JSON.stringify(og, null, 2)}
+            </pre>
+          </section>
+
+          <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
+            <h3 className="text-lg font-semibold border-b pb-2">Twitter</h3>
+            <pre className="bg-gray-100 p-3 rounded-lg text-xs overflow-x-auto">
+              {JSON.stringify(tw, null, 2)}
+            </pre>
+          </section>
+
+          {/* Optional: keep image/schema bits with social if you like */}
+          <ImageAuditCard data={data} />
+          <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
+            <h3 className="text-lg font-semibold border-b pb-2">Schema Types</h3>
+            <div>{(data.schemaTypes || []).join(", ") || <i>—</i>}</div>
+          </section>
+        </>
       ) : active === "links" ? (
         <>
           <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
@@ -119,7 +141,7 @@ export default function ResultCard({ data }: { data: any }) {
             </div>
           </section>
 
-          {/* If your LinkCheckerCard expects data, switch to data={data} */}
+          {/* If your LinkCheckerCard expects `url`, switch prop accordingly */}
           {data ? <LinkCheckerCard data={data} /> : null}
         </>
       ) : active === "structured" ? (
@@ -158,7 +180,6 @@ export default function ResultCard({ data }: { data: any }) {
             </div>
           </section>
 
-          {/* These cards typically expect full `data`; if yours take `url`, adjust */}
           <HeadersCard data={data} />
           <ImageAuditCard data={data} />
           <AmpCard data={data} />
@@ -284,23 +305,6 @@ export default function ResultCard({ data }: { data: any }) {
               </section>
             )}
           </div>
-
-          {/* Optional extras on overview */}
-          <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
-            <h3 className="text-lg font-semibold border-b pb-2">Open Graph</h3>
-            <pre className="bg-gray-100 p-3 rounded-lg text-xs overflow-x-auto">
-              {JSON.stringify(og, null, 2)}
-            </pre>
-          </section>
-
-          <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
-            <h3 className="text-lg font-semibold border-b pb-2">Twitter</h3>
-            <pre className="bg-gray-100 p-3 rounded-lg text-xs overflow-x-auto">
-              {JSON.stringify(tw, null, 2)}
-            </pre>
-          </section>
-
-          <ImageAuditCard data={data} />
         </>
       )}
     </div>
