@@ -21,6 +21,10 @@ const STEPS = [
   { key: 'security',    label: 'Security' },
   { key: 'structured',  label: 'Structured Data' },
   { key: 'scoring',     label: 'Scoring' },
+  { key: 'contentAnalysis',     label: 'content Analysis' },
+  { key: 'plagiarism',          label: 'plagiarism' },
+  { key: 'seoOptimization',     label: 'seo Optimization' },
+  { key: 'spamSignals',     label: 'spam Signals' },
 ] as const;
 
 export function ScanProgress({
