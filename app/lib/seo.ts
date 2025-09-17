@@ -67,6 +67,7 @@ export type SEOResult = {
   url: string;
   finalUrl?: string;
   redirected?: boolean;
+  contentAnalysis?: import("@/lib/contentAnalysis").ContentAnalysis;
 
   http: {
     status?: number;
