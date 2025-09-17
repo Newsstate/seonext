@@ -225,43 +225,15 @@ export default function ResultCard({ data }: { data: any }) {
             </div>
           </section>
 
-          {/* Findings */}
-          {(data._issues?.length || data._warnings?.length) && (
-            <section className="bg-white rounded-xl shadow-sm p-5 space-y-3 md:col-span-2">
-              <h3 className="text-lg font-semibold border-b pb-2">
-                All Findings
-              </h3>
-              <OverviewFindings data={data} />
+     {/* Findings */}
+{((data._issues?.length ?? 0) + (data._warnings?.length ?? 0)) > 0 && (
+  <section className="bg-white rounded-xl shadow-sm p-5 space-y-3 md:col-span-2">
+    <h3 className="text-lg font-semibold border-b pb-2">All Findings</h3>
+    <OverviewFindings data={data} /* use variant="embedded" if you want no inner card header */ />
+  </section>
+)}
 
-              <ul className="list-disc pl-6 space-y-1 text-sm">
-                {warnings.map((w: string, i: number) => {
-                  // match warnings that have lists we can show
-                  let items: string[] | undefined, label = '';
-                  if (/images?\s+missing\s+alt/i.test(w)) { items = details.imagesMissingAlt; label = 'images'; }
-                  else if (/images?\s+not\s+using\s+lazy\s+loading/i.test(w)) { items = details.imagesNoLazy; label = 'images'; }
-                  else if (/images?\s+missing\s+explicit\s+width\/height/i.test(w)) { items = details.imagesNoSize; label = 'images'; }
-                  else if (/render-blocking\s+scripts\s+in\s*<head>/i.test(w)) { items = details.scriptsHeadBlocking; label = 'scripts'; }
-                  else if (/large number of links/i.test(w)) { items = details.linksAll; label = 'links'; }
 
-                  return (
-                    <li key={"w" + i} className="text-amber-700">
-                      ⚠️ {w}
-                      {items && items.length > 0 && (
-                        <ExpandList label={`list of ${label}`} items={items} />
-                      )}
-                    </li>
-                  );
-                })}
-                {(data._issues || []).map((w: string, i: number) => (
-                  <li key={"e" + i} className="text-red-700">
-                    ❌ {w}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </div>
-      )}
 
       {/* Other Tabs unchanged except styling */}
       {tab === "content" && (
