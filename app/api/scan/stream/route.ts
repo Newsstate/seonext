@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { runContentAnalysis } from "@/lib/contentAnalysis";
 import got from 'got';
 import {
   parseSEO,
@@ -146,6 +147,49 @@ export async function GET(req: NextRequest) {
         };
         done('meta', (pct += inc.meta));
 
+
+        // --- CONTENT ANALYSIS ---
+start("contentAnalysis", "Analyzing content length, language & readability", pct + 1);
+let _analysis;
+try {
+  _analysis = await runContentAnalysis({
+    html: htmlString, // your fetched HTML variable
+    url,
+    title: parsed.title,
+    h1: (parsed.headingsList || []).find(h => h.level === "h1")?.text,
+    metaDescription: parsed.metaDescription,
+    images: parsed.images,
+    internalLinkCount: parsed.links?.internal ?? 0,
+  });
+  (result as any).contentAnalysis = _analysis;
+} catch (e) {
+  // safe fallback
+  (result as any).contentAnalysis = undefined;
+}
+done("contentAnalysis", pct += 3);
+
+// --- PLAGIARISM ---
+start("plagiarism", "Checking plagiarism (EN/HI snippets)", pct + 1);
+try {
+  // plagiarism already executed inside runContentAnalysis; split stage visually
+  // No-op; we just show a stage
+} catch {}
+done("plagiarism", pct += 2);
+
+// --- SEO OPTIMIZATION ---
+start("seoOptimization", "Scoring SEO optimization (keywords & on-page signals)", pct + 1);
+try {
+  // already inside _analysis; nothing extra to compute
+} catch {}
+done("seoOptimization", pct += 2);
+
+// --- SPAM SIGNALS ---
+start("spamSignals", "Scanning spam signals (stuffing/hidden text/doorway)", pct + 1);
+try {
+  // already inside _analysis; nothing extra to compute
+} catch {}
+done("spamSignals", pct += 2);
+        
         // 7) OPEN GRAPH
         start('openGraph', 'og:title / og:description / og:image', pct + 2);
         const og = parsed.og || {};
@@ -280,3 +324,4 @@ export async function GET(req: NextRequest) {
     },
   });
 }
+
