@@ -17,11 +17,24 @@ import RenderCompareCard from './RenderCompareCard';
 import CrawlHintsCard from './CrawlHintsCard';
 import TouchpointsCard from './TouchpointsCard';
 
+// NEW: details type for lists under findings
+type Details = {
+  imagesMissingAlt?: string[];
+  imagesNoLazy?: string[];
+  imagesNoSize?: string[];
+  scriptsHeadBlocking?: string[];
+  linksAll?: string[];
+};
+
 export default function ResultCard({ data }: { data: any }) {
   const [tab, setTab] = useState<string>("overview");
   const Links = data.links || {};
   const og = data.og || {};
   const tw = data.twitter || {};
+
+  // NEW: make warnings/details easy to use below
+  const warnings: string[] = data?._warnings ?? [];
+  const details: Details = (data?.details ?? {}) as Details;
 
   const tabs = [
     { key: "overview", label: "Overview" },
@@ -66,6 +79,28 @@ export default function ResultCard({ data }: { data: any }) {
       ))}
     </div>
   );
+
+  // NEW: tiny expand/collapse list helper
+  const ExpandList: React.FC<{label:string; items?:string[]}> = ({ label, items }) => {
+    const [open, setOpen] = React.useState(false);
+    if (!items || items.length === 0) return null;
+    return (
+      <div className="mt-2">
+        <button className="text-xs underline" onClick={()=>setOpen(!open)}>
+          {open ? 'Hide' : 'Show'} {label} ({items.length})
+        </button>
+        {open && (
+          <ul className="list-disc pl-6 mt-2 text-sm break-all">
+            {items.map((x,i)=>(
+              <li key={i}>
+                {/^https?:\/\//i.test(x) ? <a href={x} target="_blank" rel="noreferrer">{x}</a> : x}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="bg-gray-50 rounded-2xl shadow-sm p-6 space-y-6">
@@ -195,11 +230,24 @@ export default function ResultCard({ data }: { data: any }) {
                 All Findings
               </h3>
               <ul className="list-disc pl-6 space-y-1 text-sm">
-                {(data._warnings || []).map((w: string, i: number) => (
-                  <li key={"w" + i} className="text-amber-700">
-                    ⚠️ {w}
-                  </li>
-                ))}
+                {warnings.map((w: string, i: number) => {
+                  // match warnings that have lists we can show
+                  let items: string[] | undefined, label = '';
+                  if (/images?\s+missing\s+alt/i.test(w)) { items = details.imagesMissingAlt; label = 'images'; }
+                  else if (/images?\s+not\s+using\s+lazy\s+loading/i.test(w)) { items = details.imagesNoLazy; label = 'images'; }
+                  else if (/images?\s+missing\s+explicit\s+width\/height/i.test(w)) { items = details.imagesNoSize; label = 'images'; }
+                  else if (/render-blocking\s+scripts\s+in\s*<head>/i.test(w)) { items = details.scriptsHeadBlocking; label = 'scripts'; }
+                  else if (/large number of links/i.test(w)) { items = details.linksAll; label = 'links'; }
+
+                  return (
+                    <li key={"w" + i} className="text-amber-700">
+                      ⚠️ {w}
+                      {items && items.length > 0 && (
+                        <ExpandList label={`list of ${label}`} items={items} />
+                      )}
+                    </li>
+                  );
+                })}
                 {(data._issues || []).map((w: string, i: number) => (
                   <li key={"e" + i} className="text-red-700">
                     ❌ {w}
