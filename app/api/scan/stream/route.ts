@@ -5,6 +5,7 @@ import {
   extractMainText,
   readabilityStats,
   scoreFrom,
+  type SEOResult,
 } from '@/lib/seo';
 
 export const runtime = 'nodejs';
@@ -35,10 +36,11 @@ type ProgressEvent = {
   percent?: number;
   done?: boolean;
   message?: string;
-  data?: any; // final payload
+  data?: any;
 };
 
 const sse = (obj: ProgressEvent) => `data: ${JSON.stringify(obj)}\n\n`;
+const countRegex = (html: string, re: RegExp) => (html.match(re) || []).length;
 
 async function fetchHtml(url: string, ua: string) {
   return got(url, {
@@ -49,9 +51,6 @@ async function fetchHtml(url: string, ua: string) {
     followRedirect: true,
   });
 }
-
-const countRegex = (html: string, re: RegExp) =>
-  (html.match(re) || []).length;
 
 export async function GET(req: NextRequest) {
   const u = new URL(req.url);
@@ -75,16 +74,12 @@ export async function GET(req: NextRequest) {
       const done = (step: Step, p?: number) =>
         write({ status: 'progress', step, done: true, percent: p });
 
-      // keep-alive
       const hb = setInterval(() => {
         controller.enqueue(encoder.encode(':hb\n\n'));
       }, 15000);
 
       try {
         let pct = 0;
-        const bump = (delta: number) => (pct = Math.min(100, pct + delta));
-
-        // % allocation: sums to 100
         const inc = {
           overview: 6, content: 10, headings: 5, images: 6, links: 8, meta: 8,
           openGraph: 5, twitter: 4, canonical: 4, hreflang: 4, robots: 6,
@@ -92,7 +87,7 @@ export async function GET(req: NextRequest) {
         } as const;
 
         // 1) OVERVIEW
-        start('overview', 'Fetching HTML', bump(3));
+        start('overview', 'Fetching HTML', (pct += 3));
         const ua = 'Mozilla/5.0 (compatible; SEO-Stream/2.0; +https://example.com)';
         const resp = await fetchHtml(url, ua);
         const body = resp.body;
@@ -127,110 +122,103 @@ export async function GET(req: NextRequest) {
 
         // 5) LINKS (+ parse everything)
         start('links', 'Parsing DOM & links', pct + 3);
-        const parsed = parseSEO(body, url, headers, resp.statusCode);
-        parsed.finalUrl = finalUrl;
-        parsed.redirected = parsed.finalUrl !== url;
+        const parsed: SEOResult = parseSEO(body, url, headers, resp.statusCode);
 
-        // Support both shapes: summary object (current) OR array (future-proof)
-        let internalLinks = 0, externalLinks = 0;
-        const p: any = parsed;
+        // annotate navigation info without fighting TS
+        (parsed as any).finalUrl = finalUrl;
+        (parsed as any).redirected = finalUrl !== url;
 
-        if (Array.isArray(p.linkList)) {
-          internalLinks = p.linkList.filter((l: any) => l.internal).length;
-          externalLinks = p.linkList.filter((l: any) => !l.internal).length;
-        } else if (Array.isArray(p.links)) {
-          internalLinks = p.links.filter((l: any) => l.internal).length;
-          externalLinks = p.links.filter((l: any) => !l.internal).length;
-        } else if (p.links && typeof p.links === 'object') {
-          // { total, internal, external, nofollow }
-          internalLinks = Number(p.links.internal) || 0;
-          externalLinks = Number(p.links.external) || 0;
-        }
+        const internalLinks = Number(parsed.links.internal) || 0;
+        const externalLinks = Number(parsed.links.external) || 0;
 
         start('links', `Classified ${internalLinks} internal / ${externalLinks} external`, pct + 3);
         done('links', (pct += inc.links));
 
-        // 6) META (use p.meta to satisfy TS)
+        // 6) META
         start('meta', 'Title & Description', pct + 3);
-        const meta: any = p.meta || {};
-        const title: string | null = (p.title ?? meta.title ?? null) || null;
-        const description: string | null = (meta.description ?? null) || null;
-        p.metaAudit = {
-          titleLength: title ? title.length : 0,
-          descriptionLength: description ? description.length : 0,
-          hasTitle: !!title,
-          hasDescription: !!description,
+        const title = parsed.title ?? null;
+        const description = parsed.metaDescription ?? null;
+        (parsed as any).metaAudit = {
+          titleLength: parsed.titleLength,
+          descriptionLength: parsed.descriptionLength,
+          hasTitle: !!parsed.title,
+          hasDescription: !!parsed.metaDescription,
         };
         done('meta', (pct += inc.meta));
 
         // 7) OPEN GRAPH
         start('openGraph', 'og:title / og:description / og:image', pct + 2);
-        const og: any = p.og || {};
-        p.openGraphAudit = {
-          hasTitle: !!og.title,
-          hasDescription: !!og.description,
-          hasImage: !!og.image,
+        const og = parsed.og || {};
+        (parsed as any).openGraphAudit = {
+          hasTitle: !!og['og:title'],
+          hasDescription: !!og['og:description'],
+          hasImage: !!og['og:image'],
         };
         done('openGraph', (pct += inc.openGraph));
 
         // 8) TWITTER
         start('twitter', 'twitter:card / twitter:title / twitter:image', pct + 2);
-        const tw: any = p.twitter || {};
-        p.twitterAudit = {
-          hasCard: !!tw.card,
-          hasTitle: !!tw.title,
-          hasImage: !!tw.image,
+        const tw = parsed.twitter || {};
+        (parsed as any).twitterAudit = {
+          hasCard: !!tw['twitter:card'],
+          hasTitle: !!tw['twitter:title'],
+          hasImage: !!tw['twitter:image'],
         };
         done('twitter', (pct += inc.twitter));
 
         // 9) CANONICAL
         start('canonical', 'Checking canonical href', pct + 2);
-        const canonical: string | null = p.canonical ?? null;
+        const canonical = parsed.canonical ?? null;
+        const canonicalStatus = parsed.canonicalStatus;
+        (parsed as any).canonicalAudit = { canonical, canonicalStatus };
         done('canonical', (pct += inc.canonical));
 
         // 10) HREFLANG
         start('hreflang', 'Validating hreflang set', pct + 2);
-        const hreflang: any[] = p.hreflang ?? [];
+        (parsed as any).hreflangAudit = {
+          map: parsed.hreflangMap,
+          validation: parsed.hreflangValidation,
+        };
         done('hreflang', (pct += inc.hreflang));
 
         // 11) ROBOTS
         start('robots', 'Robots meta / X-Robots-Tag', pct + 3);
-        const robotsMeta: string | null = meta.robots ?? null;
-        const xRobots: string | null = headers['x-robots-tag'] ?? null;
-        p.robotsAudit = { robotsMeta, xRobots };
+        const robotsMeta = parsed.robotsMeta;
+        const xRobots = parsed.http?.xRobotsTag || null;
+        (parsed as any).robotsAudit = { robotsMeta, xRobots };
         done('robots', (pct += inc.robots));
 
-        // 12) SITEMAP
+        // 12) SITEMAP (not provided by parser; keep placeholder)
         start('sitemap', 'Sitemap hint / discovery', pct + 2);
-        const sitemap: string | null = p.sitemap ?? null;
+        (parsed as any).sitemap = null;
         done('sitemap', (pct += inc.sitemap));
 
         // 13) AMP
         start('amp', 'AMP link rel=amphtml', pct + 2);
-        if (p.ampHtml) {
+        if (parsed.ampHtml) {
           try {
-            await fetchHtml(p.ampHtml, ua);
-            p.ampFetched = true;
+            await fetchHtml(parsed.ampHtml, ua);
+            (parsed as any).ampFetched = true;
           } catch {
-            p.ampFetched = false;
+            (parsed as any).ampFetched = false;
           }
         } else {
-          p.ampFetched = false;
+          (parsed as any).ampFetched = false;
         }
         done('amp', (pct += inc.amp));
 
         // 14) PERFORMANCE
         start('performance', 'Render-blocking & timings', pct + 5);
-        const rb: any = p.renderBlocking || {
-          stylesheets: [],
-          scriptsHeadBlocking: [],
+        const rb = parsed.renderBlocking || {
+          stylesheets: 0,
+          scriptsHeadBlocking: 0,
           scriptsTotal: 0,
         };
         const timings: any = (resp as any).timings || {};
-        p.performance = {
-          blockingCSS: rb.stylesheets?.length || 0,
-          blockingHeadScripts: rb.scriptsHeadBlocking?.length || 0,
-          scriptsTotal: rb.scriptsTotal || 0,
+        (parsed as any).performance = {
+          blockingCSS: rb.stylesheets,
+          blockingHeadScripts: rb.scriptsHeadBlocking,
+          scriptsTotal: rb.scriptsTotal,
           totalMs:
             (timings.phases && timings.phases.total) ||
             (timings.response && timings.response) ||
@@ -239,35 +227,35 @@ export async function GET(req: NextRequest) {
         done('performance', (pct += inc.performance));
 
         // 15) SECURITY
-        start('security', 'HTTPS & content-type', pct + 2);
-        p.security = {
-          https: finalUrl.startsWith('https://'),
-          contentType: headers['content-type'],
+        start('security', 'HTTPS & security headers', pct + 2);
+        (parsed as any).security = {
+          scheme: parsed.http?.scheme,
+          headers: parsed.http?.security,
         };
         done('security', (pct += inc.security));
 
         // 16) STRUCTURED DATA
         start('structured', 'JSON-LD / Microdata audit', pct + 4);
-        // p.schemaTypes / p.schemaAudit (if your parser fills them)
+        // parsed.schemaTypes / parsed.schemaAudit already set by parser
         done('structured', (pct += inc.structured));
 
-        // finalize overview + extra facts
-        p.overview = {
+        // finalize overview
+        (parsed as any).overview = {
           url: finalUrl,
-          statusCode: resp.statusCode,
+          statusCode: parsed.http?.status,
           title,
           description,
           wordCount: contentStats.words,
-          readingTimeMin: contentStats.readingTimeMin,
+          readingTimeMin: contentStats.readMinutes,
           headings: { h1, h2, h3, h4, h5, h6 },
           images: { total: imgCount, withAlt: imgWithAlt },
-          redirected: parsed.redirected,
+          redirected: finalUrl !== url,
         };
 
         // 17) SCORING
         start('scoring', 'Computing overall score', pct + 2);
-        p.contentStats = contentStats;
-        p.score = scoreFrom(parsed);
+        (parsed as any).contentStats = contentStats; // matches your type
+        parsed.score = scoreFrom(parsed);
         done('scoring', 100);
 
         write({ status: 'done', percent: 100, data: parsed });
