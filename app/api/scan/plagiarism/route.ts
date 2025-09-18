@@ -136,9 +136,11 @@ export async function GET(req: NextRequest) {
         parsed.finalUrl = finalUrl;
         parsed.redirected = parsed.finalUrl !== url;
 
-        const { internal: internalLinks, external: externalLinks } = getLinkCounts(parsed.links as any);
+      const internalLinks = (parsed.links as any)?.internal ?? 0;
+const externalLinks = (parsed.links as any)?.external ?? 0;
+
 start('links', `Classified ${internalLinks} internal / ${externalLinks} external`, pct + 3);
-done('links', pct += inc.links);
+done('links', (pct += inc.links));
 
         // 6) META
         start('meta', 'Title & Description', pct + 3);
@@ -281,4 +283,5 @@ done('links', pct += inc.links);
     },
   });
 }
+
 
