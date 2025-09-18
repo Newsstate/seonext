@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import type { AiEeatAssessment } from "@/lib/aiEeat";
 
 /* ------------ types ------------ */
 
@@ -63,12 +64,41 @@ export type SecurityHeaders = {
 };
 
 // Consolidated and corrected SEOResult type
+
+export type ContentAnalysisResult = {
+  // ...existing fields you already added
+  eat: {
+    hasAuthorByline: boolean;
+    hasPublishedDate: boolean;
+    hasUpdatedDate: boolean;
+    hasContactOrAbout: boolean;
+    schemaHints: {
+      hasArticle: boolean; hasOrganization: boolean; hasPerson: boolean;
+      hasWebSite?: boolean; hasProfilePage?: boolean; hasBreadcrumb?: boolean;
+    };
+    author?: { name?: string; url?: string; sameAs?: string[]; sources?: string[] };
+    publisher?: { name?: string; url?: string; logo?: string; sameAs?: string[]; sources?: string[] };
+    publishedISO?: string | null;
+    modifiedISO?: string | null;
+    policyHints?: {
+      hasEditorialPolicy: boolean; hasCorrectionsPolicy: boolean;
+      hasFactCheckingPolicy: boolean; hasReviewByline: boolean; foundUrls: string[];
+    };
+    who?: string | null; how?: string | null; why?: string | null;
+  };
+
+  // NEW
+  aiAssessment?: AiEeatAssessment;
+  seoOptimization?: { score: number; notes: string[] };
+};
+
 export type SEOResult = {
   url: string;
   finalUrl?: string;
   redirected?: boolean;
   contentAnalysis?: import("@/lib/contentAnalysis").ContentAnalysis;
 
+  
   http: {
     status?: number;
     contentType?: string;
