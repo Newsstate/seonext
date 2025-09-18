@@ -1,6 +1,11 @@
+// app/api/scan/stream/route.ts
 import { NextRequest } from 'next/server';
-import { runContentAnalysis } from "@/lib/contentAnalysis";
 import got from 'got';
+
+import { runContentAnalysis } from '@/lib/contentAnalysis';
+import { runAIEEAT } from '@/lib/aiEeat';
+import { callModelOpenAIJSON } from '@/lib/modelShim';
+
 import {
   parseSEO,
   extractMainText,
@@ -14,10 +19,10 @@ export const runtime = 'nodejs';
 type Step =
   | 'overview'
   | 'content'
-  | 'contentAnalysis'   // ← NEW
-  | 'plagiarism'        // ← NEW
-  | 'seoOptimization'   // ← NEW
-  | 'spamSignals'       // ← NEW
+  | 'contentAnalysis'  // ← NEW (no pct change)
+  | 'plagiarism'       // ← NEW (no pct change)
+  | 'seoOptimization'  // ← NEW (no pct change)
+  | 'spamSignals'      // ← NEW (no pct change)
   | 'headings'
   | 'images'
   | 'links'
@@ -32,6 +37,7 @@ type Step =
   | 'performance'
   | 'security'
   | 'structured'
+  | 'aiEeat'           // ← NEW (no pct change)
   | 'scoring';
 
 type ProgressEvent = {
@@ -102,12 +108,12 @@ export async function GET(req: NextRequest) {
         start('overview', 'Extracting page basics', pct + 2);
         const main = extractMainText(body);
         const contentStats = readabilityStats(main.text);
-        done('overview', (pct = 6));
+        done('overview', (pct = inc.overview)); // 6
 
         // 2) CONTENT
         start('content', 'Readability & word count', pct + 5);
         start('content', 'Main text length', pct + 3);
-        done('content', (pct += inc.content));
+        done('content', (pct += inc.content)); // +10 → 16
 
         // 3) HEADINGS
         start('headings', 'Counting H1–H6', pct + 2);
@@ -117,19 +123,19 @@ export async function GET(req: NextRequest) {
         const h4 = countRegex(body, /<h4\b[^>]*>/gi);
         const h5 = countRegex(body, /<h5\b[^>]*>/gi);
         const h6 = countRegex(body, /<h6\b[^>]*>/gi);
-        done('headings', (pct += inc.headings));
+        done('headings', (pct += inc.headings)); // +5 → 21
 
         // 4) IMAGES
         start('images', 'Scanning <img> + alt attributes', pct + 3);
         const imgCount = countRegex(body, /<img\b[^>]*>/gi);
         const imgWithAlt = countRegex(body, /<img\b[^>]*\balt=/gi);
-        done('images', (pct += inc.images));
+        done('images', (pct += inc.images)); // +6 → 27
 
         // 5) LINKS (+ parse everything)
         start('links', 'Parsing DOM & links', pct + 3);
         const parsed: SEOResult = parseSEO(body, url, headers, resp.statusCode);
 
-        // annotate navigation info without fighting TS
+        // annotate navigation info
         (parsed as any).finalUrl = finalUrl;
         (parsed as any).redirected = finalUrl !== url;
 
@@ -137,7 +143,7 @@ export async function GET(req: NextRequest) {
         const externalLinks = Number(parsed.links.external) || 0;
 
         start('links', `Classified ${internalLinks} internal / ${externalLinks} external`, pct + 3);
-        done('links', (pct += inc.links));
+        done('links', (pct += inc.links)); // +8 → 35
 
         // 6) META
         start('meta', 'Title & Description', pct + 3);
@@ -149,56 +155,38 @@ export async function GET(req: NextRequest) {
           hasTitle: !!parsed.title,
           hasDescription: !!parsed.metaDescription,
         };
-        done('meta', (pct += inc.meta));
+        done('meta', (pct += inc.meta)); // +8 → 43
 
+        // --- CONTENT ANALYSIS (no pct change) ---
+        start('contentAnalysis', 'Analyzing content length, language & readability', pct);
+        try {
+          const analysis = await runContentAnalysis({
+            html: body,
+            url,
+            title: parsed.title,
+            h1: (parsed.headingsList || []).find(h => h.level === 'h1')?.text,
+            metaDescription: parsed.metaDescription,
+            images: parsed.images,
+            internalLinkCount: parsed.links?.internal ?? 0,
+          });
+          (parsed as any).contentAnalysis = analysis;
+        } catch {
+          (parsed as any).contentAnalysis = undefined;
+        }
+        done('contentAnalysis', pct);
 
-       // --- CONTENT ANALYSIS ---
-start('contentAnalysis', 'Analyzing content length, language & readability', pct + 1);
-let analysis;
-try {
-  analysis = await runContentAnalysis({
-    html: body, // ← use fetched HTML
-    url,
-    title: parsed.title,
-    h1: (parsed.headingsList || []).find(h => h.level === 'h1')?.text,
-    metaDescription: parsed.metaDescription,
-    images: parsed.images,
-    internalLinkCount: parsed.links?.internal ?? 0,
-  });
-  (parsed as any).contentAnalysis = analysis; // ← assign to parsed
-} catch {
-  (parsed as any).contentAnalysis = undefined;
-}
-done('contentAnalysis', pct += 3);
+        // --- PLAGIARISM (visual stage only; analysis ran above) ---
+        start('plagiarism', 'Checking plagiarism (EN/HI snippets)', pct);
+        done('plagiarism', pct);
 
-// --- PLAGIARISM ---
-start('plagiarism', 'Checking plagiarism (EN/HI snippets)', pct + 1);
-// (runContentAnalysis already did the check; this stage is for streaming UX)
-done('plagiarism', pct += 2);
+        // --- SEO OPTIMIZATION (visual stage only; part of contentAnalysis) ---
+        start('seoOptimization', 'Scoring SEO optimization (keywords & signals)', pct);
+        done('seoOptimization', pct);
 
-// --- SEO OPTIMIZATION ---
-start('seoOptimization', 'Scoring SEO optimization (keywords & on-page signals)', pct + 1);
-done('seoOptimization', pct += 2);
+        // --- SPAM SIGNALS (visual stage only; part of contentAnalysis) ---
+        start('spamSignals', 'Scanning spam signals (stuffing/hidden/doorway)', pct);
+        done('spamSignals', pct);
 
-// --- SPAM SIGNALS ---
-start('spamSignals', 'Scanning spam signals (stuffing/hidden text/doorway)', pct + 1);
-done('spamSignals', pct += 2);
-
-
-// --- SEO OPTIMIZATION ---
-start("seoOptimization", "Scoring SEO optimization (keywords & on-page signals)", pct + 1);
-try {
-  // already inside _analysis; nothing extra to compute
-} catch {}
-done("seoOptimization", pct += 2);
-
-// --- SPAM SIGNALS ---
-start("spamSignals", "Scanning spam signals (stuffing/hidden text/doorway)", pct + 1);
-try {
-  // already inside _analysis; nothing extra to compute
-} catch {}
-done("spamSignals", pct += 2);
-        
         // 7) OPEN GRAPH
         start('openGraph', 'og:title / og:description / og:image', pct + 2);
         const og = parsed.og || {};
@@ -207,7 +195,7 @@ done("spamSignals", pct += 2);
           hasDescription: !!og['og:description'],
           hasImage: !!og['og:image'],
         };
-        done('openGraph', (pct += inc.openGraph));
+        done('openGraph', (pct += inc.openGraph)); // +5 → 48
 
         // 8) TWITTER
         start('twitter', 'twitter:card / twitter:title / twitter:image', pct + 2);
@@ -217,14 +205,14 @@ done("spamSignals", pct += 2);
           hasTitle: !!tw['twitter:title'],
           hasImage: !!tw['twitter:image'],
         };
-        done('twitter', (pct += inc.twitter));
+        done('twitter', (pct += inc.twitter)); // +4 → 52
 
         // 9) CANONICAL
         start('canonical', 'Checking canonical href', pct + 2);
         const canonical = parsed.canonical ?? null;
         const canonicalStatus = parsed.canonicalStatus;
         (parsed as any).canonicalAudit = { canonical, canonicalStatus };
-        done('canonical', (pct += inc.canonical));
+        done('canonical', (pct += inc.canonical)); // +4 → 56
 
         // 10) HREFLANG
         start('hreflang', 'Validating hreflang set', pct + 2);
@@ -232,19 +220,19 @@ done("spamSignals", pct += 2);
           map: parsed.hreflangMap,
           validation: parsed.hreflangValidation,
         };
-        done('hreflang', (pct += inc.hreflang));
+        done('hreflang', (pct += inc.hreflang)); // +4 → 60
 
         // 11) ROBOTS
         start('robots', 'Robots meta / X-Robots-Tag', pct + 3);
         const robotsMeta = parsed.robotsMeta;
         const xRobots = parsed.http?.xRobotsTag || null;
         (parsed as any).robotsAudit = { robotsMeta, xRobots };
-        done('robots', (pct += inc.robots));
+        done('robots', (pct += inc.robots)); // +6 → 66
 
-        // 12) SITEMAP (not provided by parser; keep placeholder)
+        // 12) SITEMAP (placeholder)
         start('sitemap', 'Sitemap hint / discovery', pct + 2);
         (parsed as any).sitemap = null;
-        done('sitemap', (pct += inc.sitemap));
+        done('sitemap', (pct += inc.sitemap)); // +4 → 70
 
         // 13) AMP
         start('amp', 'AMP link rel=amphtml', pct + 2);
@@ -258,7 +246,7 @@ done("spamSignals", pct += 2);
         } else {
           (parsed as any).ampFetched = false;
         }
-        done('amp', (pct += inc.amp));
+        done('amp', (pct += inc.amp)); // +5 → 75
 
         // 14) PERFORMANCE
         start('performance', 'Render-blocking & timings', pct + 5);
@@ -277,7 +265,7 @@ done("spamSignals", pct += 2);
             (timings.response && timings.response) ||
             undefined,
         };
-        done('performance', (pct += inc.performance));
+        done('performance', (pct += inc.performance)); // +10 → 85
 
         // 15) SECURITY
         start('security', 'HTTPS & security headers', pct + 2);
@@ -285,14 +273,49 @@ done("spamSignals", pct += 2);
           scheme: parsed.http?.scheme,
           headers: parsed.http?.security,
         };
-        done('security', (pct += inc.security));
+        done('security', (pct += inc.security)); // +3 → 88
 
         // 16) STRUCTURED DATA
         start('structured', 'JSON-LD / Microdata audit', pct + 4);
-        // parsed.schemaTypes / parsed.schemaAudit already set by parser
-        done('structured', (pct += inc.structured));
+        // parsed.schemaTypes / parsed.schemaAudit already present from parser
+        done('structured', (pct += inc.structured)); // +7 → 95
 
-        // finalize overview
+        // 16.5) AI E-E-A-T (optional, no pct change)
+        if (process.env.ENABLE_AI_EEAT === '1') {
+          start('aiEeat', 'E-E-A-T AI assessment', pct);
+          try {
+            const excerpt = extractMainText(body).text.slice(0, 12000);
+            const facts = {
+              url: (parsed as any).finalUrl || url,
+              eat: (parsed as any).contentAnalysis?.eat || (parsed as any).eat || {},
+              schema: { types: parsed.schemaTypes, audit: parsed.schemaAudit },
+              policies: (parsed as any).contentAnalysis?.eat?.policyHints,
+              robots: parsed.robotsMeta,
+              authorMeta: { ogAuthor: parsed.twitter?.['article:author'] || null },
+            };
+
+            const aiAssessment = await runAIEEAT({
+              url,
+              htmlExcerpt: excerpt,
+              facts,
+              callModel: callModelOpenAIJSON,
+            });
+
+            (parsed as any).contentAnalysis = {
+              ...(parsed as any).contentAnalysis,
+              aiAssessment,
+            };
+          } catch (e: any) {
+            (parsed as any).contentAnalysis = {
+              ...(parsed as any).contentAnalysis,
+              aiAssessment: undefined,
+              aiError: e?.message || String(e),
+            };
+          }
+          done('aiEeat', pct);
+        }
+
+        // finalize overview info
         (parsed as any).overview = {
           url: finalUrl,
           statusCode: parsed.http?.status,
@@ -307,7 +330,7 @@ done("spamSignals", pct += 2);
 
         // 17) SCORING
         start('scoring', 'Computing overall score', pct + 2);
-        (parsed as any).contentStats = contentStats; // matches your type
+        (parsed as any).contentStats = contentStats;
         parsed.score = scoreFrom(parsed);
         done('scoring', 100);
 
@@ -333,5 +356,3 @@ done("spamSignals", pct += 2);
     },
   });
 }
-
-
