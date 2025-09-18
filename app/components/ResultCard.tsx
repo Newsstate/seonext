@@ -18,8 +18,6 @@ import CrawlHintsCard from "./CrawlHintsCard";
 import TouchpointsCard from "./TouchpointsCard";
 import OverviewFindings from "./OverviewFindings";
 import ContentAnalysisTab from "@/components/ContentAnalysisTab";
-import PlagiarismCard from './PlagiarismCard';
-import EEATCard from './EEATCard';
 
 type Details = {
   imagesMissingAlt?: string[];
@@ -181,8 +179,7 @@ export default function ResultCard({ data }: { data: any }) {
               </div>
             </div>
           </section>
-<PlagiarismCard url={data?.scannedUrl || data?.finalUrl || data?.url} />
-<EEATCard url={data?.scannedUrl || data?.finalUrl || data?.url} />
+
 
           <HeadersCard url={pageUrl} />
           <ImageAuditCard url={pageUrl} />
