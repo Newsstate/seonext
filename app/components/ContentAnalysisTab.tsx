@@ -1,7 +1,5 @@
 // app/components/ContentAnalysisTab.tsx
 "use client";
-import PlagiarismCard from './PlagiarismCard';
-import EEATCard from './EEATCard';
 
 import React from "react";
 import type { SEOResult } from "@/lib/seo";
@@ -513,7 +511,6 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
               No external matches found (or external search disabled).
             </div>
           )}
-          <PlagiarismCard url={data?.scannedUrl || data?.finalUrl || data?.url} />
         </section>
 
 
@@ -587,7 +584,6 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
               AI E-E-A-T is disabled or not available for this scan.
             </p>
           )}
-          <EEATCard url={data?.scannedUrl || data?.finalUrl || data?.url} />
         {/* AI E-E-A-T Verdict */}
         </section>
       </div>
