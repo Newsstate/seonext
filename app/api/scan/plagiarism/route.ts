@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-
+type Match = {
+  url: string;
+  title?: string;
+  similarity?: number;
+  snippet?: string;
+};
 // Optional: If you want web search, add an external search provider here (Bing, SerpAPI, etc).
 // Keep it stubbed/off by default to avoid background work during normal scans.
 
@@ -42,8 +47,9 @@ export async function POST(req: NextRequest) {
     // Placeholder “matches” payload to show UI; replace with real search results if you wire an API.
     const matches = []; // e.g., [{ url, title, similarity: 0.64, snippet }]
 
-    return NextResponse.json({ overlap, matches });
+return NextResponse.json<{ overlap: number; matches: Match[] }>({ overlap, matches });
   } catch (e: any) {
     return NextResponse.json({ error: e.message || 'Plagiarism check failed' }, { status: 500 });
   }
 }
+
