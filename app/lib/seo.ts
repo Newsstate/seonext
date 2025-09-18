@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import type { AiEeatAssessment } from "@/lib/aiEeat";
+
 
 /* ------------ types ------------ */
 
