@@ -3,6 +3,8 @@
 
 import React from "react";
 import type { SEOResult } from "@/lib/seo";
+import PlagiarismCard from "./PlagiarismCard";
+import EEATCard from "./EEATCard";
 
 type Tone = "ok" | "warn" | "bad" | "default";
 
@@ -99,6 +101,7 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
           linkSpam: boolean;
           notes: string[];
         };
+
         eat?: {
           hasAuthorByline: boolean;
           hasPublishedDate: boolean;
@@ -144,11 +147,15 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
     return <div className="text-sm text-gray-600">No content analysis available.</div>;
   }
 
+  // TS-safe access to non-declared fields on SEOResult
+  const pageUrl: string =
+    (data as any)?.scannedUrl ?? (data as any)?.finalUrl ?? (data as any)?.url ?? "";
+
   const idxTone: Tone =
     ca.indexing.level === "good" ? "ok" : ca.indexing.level === "medium" ? "warn" : "bad";
   const spamTone: Tone = ca.spam.score >= 60 ? "bad" : ca.spam.score >= 30 ? "warn" : "ok";
   const plagTone: Tone =
-    ca.plagiarism.score == null
+    ca.plagiarism?.score == null
       ? "default"
       : ca.plagiarism.score >= 85
       ? "ok"
@@ -190,14 +197,25 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
         <div className="bg-white rounded-xl shadow-sm p-4 space-y-1">
           <div className="text-xs text-gray-500">Plagiarism (unique)</div>
           <div className="flex items-center gap-2">
-            <div className="text-lg font-semibold">{ca.plagiarism.score ?? "—"}</div>
-            <Badge tone={plagTone}>{ca.plagiarism.method}</Badge>
+            <div className="text-lg font-semibold">{ca.plagiarism?.score ?? "—"}</div>
+            <Badge tone={plagTone}>{ca.plagiarism?.method ?? "disabled"}</Badge>
           </div>
           <div className="text-xs text-gray-500">
-            {ca.plagiarism.enabled ? "External search" : "Heuristic/disabled"}
+            {ca.plagiarism?.enabled ? "External search" : "Heuristic/disabled"}
           </div>
         </div>
       </div>
+
+      {/* On-demand checks (do not run by default) */}
+      <section className="space-y-4">
+        <h3 className="text-base font-semibold">On-Demand Checks</h3>
+
+        {/* Plagiarism: click-to-run */}
+        <PlagiarismCard url={pageUrl} />
+
+        {/* AI E-E-A-T: click-to-run */}
+        <EEATCard url={pageUrl} />
+      </section>
 
       {/* E-E-A-T */}
       <section className="bg-white rounded-xl shadow-sm p-5">
@@ -256,14 +274,14 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
             <div>
               {ca.eat?.author?.name || ca.eat?.author?.url ? (
                 <>
-                  {ca.eat?.author?.name && <b>{ca.eat.author.name}</b>}
+                  {ca.eat?.author?.name && <b>{ca.eat.author!.name}</b>}
                   {ca.eat?.author?.url && (
                     <>
                       {" "}
                       -{" "}
                       <a
                         className="underline"
-                        href={ca.eat.author.url}
+                        href={ca.eat.author!.url}
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -272,9 +290,9 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
                     </>
                   )}
                   {Array.isArray(ca.eat?.author?.sameAs) &&
-                    (ca.eat.author.sameAs?.length || 0) > 0 && (
+                    ((ca.eat?.author?.sameAs?.length || 0) > 0) && (
                       <div className="mt-1 flex flex-wrap gap-2">
-                        {(ca.eat.author.sameAs || []).slice(0, 8).map((u: string, i: number) => (
+                        {(ca.eat?.author?.sameAs || []).slice(0, 8).map((u: string, i: number) => (
                           <a
                             key={i}
                             className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700"
@@ -304,31 +322,31 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
           <div className="space-y-1">
             <div className="font-medium">Publisher / Organization</div>
             <div>
-              {ca.eat?.publisher?.name ? <b>{ca.eat.publisher.name}</b> : <i>—</i>}
+              {ca.eat?.publisher?.name ? <b>{ca.eat.publisher!.name}</b> : <i>—</i>}
               {ca.eat?.publisher?.url && (
                 <>
                   {" "}
                   —{" "}
                   <a
                     className="underline"
-                    href={ca.eat.publisher.url}
+                    href={ca.eat.publisher!.url}
                     target="_blank"
                     rel="noreferrer"
                   >
-                    {ca.eat.publisher.url}
+                    {ca.eat.publisher!.url}
                   </a>
                 </>
               )}
               {ca.eat?.publisher?.logo && (
                 <div className="mt-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={ca.eat.publisher.logo} alt="logo" className="h-6" />
+                  <img src={ca.eat.publisher!.logo!} alt="logo" className="h-6" />
                 </div>
               )}
               {Array.isArray(ca.eat?.publisher?.sameAs) &&
-                (ca.eat.publisher.sameAs?.length || 0) > 0 && (
+                ((ca.eat?.publisher?.sameAs?.length || 0) > 0) && (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {(ca.eat.publisher.sameAs || []).slice(0, 8).map((u: string, i: number) => (
+                    {(ca.eat?.publisher?.sameAs || []).slice(0, 8).map((u: string, i: number) => (
                       <a
                         key={i}
                         className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700"
@@ -364,9 +382,9 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
             </div>
 
             {Array.isArray(ca.eat?.policyHints?.foundUrls) &&
-              (ca.eat.policyHints?.foundUrls?.length || 0) > 0 && (
+              ((ca.eat?.policyHints?.foundUrls?.length || 0) > 0) && (
                 <div className="mt-2 text-xs text-gray-600">
-                  {(ca.eat.policyHints?.foundUrls || [])
+                  {(ca.eat?.policyHints?.foundUrls || [])
                     .slice(0, 8)
                     .map((u: string, i: number) => (
                       <a key={i} className="mr-2 underline" href={u} target="_blank" rel="noreferrer">
@@ -496,7 +514,7 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
 
         <section className="bg-white rounded-xl shadow-sm p-5 space-y-2 md:col-span-2">
           <h3 className="text-base font-semibold">Potentially matching sources (plagiarism)</h3>
-          {ca.plagiarism.sources?.length ? (
+          {ca.plagiarism?.sources?.length ? (
             <ul className="list-disc pl-6 text-sm break-all">
               {ca.plagiarism.sources.slice(0, 10).map((s, i) => (
                 <li key={(s.url || "src") + i}>
@@ -512,7 +530,6 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
             </div>
           )}
         </section>
-
 
         <section className="bg-white rounded-xl shadow-sm p-5 md:col-span-2">
           <h4 className="font-semibold border-b pb-2">AI E-E-A-T Verdict</h4>
@@ -584,7 +601,7 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
               AI E-E-A-T is disabled or not available for this scan.
             </p>
           )}
-        {/* AI E-E-A-T Verdict */}
+          {/* AI E-E-A-T Verdict */}
         </section>
       </div>
     </div>
