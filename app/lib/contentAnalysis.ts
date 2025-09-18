@@ -1,6 +1,7 @@
 // app/lib/contentAnalysis.ts
 import * as cheerio from "cheerio";
 import { extractMainText, readabilityStats } from "@/lib/seo";
+export type AIEEAT = import("./aiEeat").AIEEAT;
 
 /* ===================== Types ===================== */
 
@@ -100,7 +101,9 @@ export type ContentAnalysis = {
   spam: SpamSignals;
 
   // expose E-E-A-T so UI can render details
-  eat: EATSignals;
+eat: EATSignals;
+  aiAssessment?: AIEEAT;
+  aiError?: string;
 
   // (Optional) if you later wire AI:
   // aiAssessment?: AiEeatAssessment;
