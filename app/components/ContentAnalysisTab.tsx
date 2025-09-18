@@ -1,7 +1,7 @@
 // app/components/ContentAnalysisTab.tsx
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import type { SEOResult } from "@/lib/seo";
 import PlagiarismCard from "./PlagiarismCard";
 import EEATCard from "./EEATCard";
@@ -46,16 +46,6 @@ function Chip({
   );
 }
 
-function List({ items }: { items: string[] }) {
-  return (
-    <ul className="list-disc pl-6 text-sm break-all space-y-1">
-      {items.map((i, idx) => (
-        <li key={idx}>{i}</li>
-      ))}
-    </ul>
-  );
-}
-
 function hostLabel(u: string): string {
   try {
     return new URL(u).hostname;
@@ -63,6 +53,12 @@ function hostLabel(u: string): string {
     return u;
   }
 }
+
+/* ---------- Types for on-demand results ---------- */
+type Match = { url: string; title?: string; similarity?: number; snippet?: string };
+type PlagOut = { overlap: number; matches: Match[] };
+type EEATScores = { experience: number; expertise: number; authoritativeness: number; trust: number };
+type EEATOut = { verdict: string; scores?: EEATScores; flags?: string[]; recommendations?: string[] };
 
 /* ---------- Main component ---------- */
 
@@ -73,12 +69,7 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
         contentLength: number;
         readability: { words: number; sentences: number; readMinutes: number; flesch: number };
         indexing: { level: "good" | "medium" | "low"; reasons: string[] };
-        plagiarism: {
-          enabled: boolean;
-          method: "serpapi" | "heuristic" | "disabled";
-          score: number | null;
-          sources: Array<{ url: string; title?: string; overlap?: number }>;
-        };
+        // NOTE: We no longer read ca.plagiarism / ca.aiAssessment here for UI output
         seoOptimization: {
           score: number;
           topTerms: string[];
@@ -130,22 +121,16 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
           how?: string | null;
           why?: string | null;
         };
-        aiAssessment?: {
-          verdict: "strong" | "okay" | "weak";
-          overall: number; // 0..100
-          reasons: string[];
-          author?: { score?: number; evidence?: string[] };
-          dates?: { score?: number; evidence?: string[] };
-          organization?: { score?: number; evidence?: string[] };
-          policies?: { score?: number; evidence?: string[] };
-          riskFlags?: string[];
-        };
       }
     | undefined;
 
   if (!ca) {
     return <div className="text-sm text-gray-600">No content analysis available.</div>;
   }
+
+  // On-demand state (filled only when user clicks the buttons)
+  const [plagResult, setPlagResult] = useState<PlagOut | null>(null);
+  const [eeatResult, setEEATResult] = useState<EEATOut | null>(null);
 
   // TS-safe access to non-declared fields on SEOResult
   const pageUrl: string =
@@ -154,14 +139,6 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
   const idxTone: Tone =
     ca.indexing.level === "good" ? "ok" : ca.indexing.level === "medium" ? "warn" : "bad";
   const spamTone: Tone = ca.spam.score >= 60 ? "bad" : ca.spam.score >= 30 ? "warn" : "ok";
-  const plagTone: Tone =
-    ca.plagiarism?.score == null
-      ? "default"
-      : ca.plagiarism.score >= 85
-      ? "ok"
-      : ca.plagiarism.score >= 60
-      ? "warn"
-      : "bad";
 
   return (
     <div className="space-y-6">
@@ -194,15 +171,21 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
           </div>
         </div>
 
+        {/* On-demand status tile for Plagiarism */}
         <div className="bg-white rounded-xl shadow-sm p-4 space-y-1">
-          <div className="text-xs text-gray-500">Plagiarism (unique)</div>
-          <div className="flex items-center gap-2">
-            <div className="text-lg font-semibold">{ca.plagiarism?.score ?? "—"}</div>
-            <Badge tone={plagTone}>{ca.plagiarism?.method ?? "disabled"}</Badge>
-          </div>
-          <div className="text-xs text-gray-500">
-            {ca.plagiarism?.enabled ? "External search" : "Heuristic/disabled"}
-          </div>
+          <div className="text-xs text-gray-500">Plagiarism (on-demand)</div>
+          {plagResult ? (
+            <>
+              <div className="text-lg font-semibold">
+                {Math.round(plagResult.overlap * 100)}% overlap
+              </div>
+              <div className="text-xs text-gray-500">
+                Matches: {plagResult.matches.length}
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-gray-600">Not run yet</div>
+          )}
         </div>
       </div>
 
@@ -211,13 +194,13 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
         <h3 className="text-base font-semibold">On-Demand Checks</h3>
 
         {/* Plagiarism: click-to-run */}
-        <PlagiarismCard url={pageUrl} />
+        <PlagiarismCard url={pageUrl} onDone={setPlagResult} />
 
         {/* AI E-E-A-T: click-to-run */}
-        <EEATCard url={pageUrl} />
+        <EEATCard url={pageUrl} onDone={setEEATResult} />
       </section>
 
-      {/* E-E-A-T */}
+      {/* E-E-A-T Hints (static hints from normal scan) */}
       <section className="bg-white rounded-xl shadow-sm p-5">
         <h4 className="font-semibold border-b pb-2">E-E-A-T Hints</h4>
 
@@ -512,97 +495,60 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
           )}
         </section>
 
-        <section className="bg-white rounded-xl shadow-sm p-5 space-y-2 md:col-span-2">
-          <h3 className="text-base font-semibold">Potentially matching sources (plagiarism)</h3>
-          {ca.plagiarism?.sources?.length ? (
-            <ul className="list-disc pl-6 text-sm break-all">
-              {ca.plagiarism.sources.slice(0, 10).map((s, i) => (
-                <li key={(s.url || "src") + i}>
-                  <a className="underline" href={s.url} target="_blank" rel="noreferrer">
-                    {s.title || s.url}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="text-sm text-gray-600">
-              No external matches found (or external search disabled).
-            </div>
-          )}
-        </section>
+        {/* Show Plagiarism results ONLY after user runs the card */}
+        {plagResult && (
+          <section className="bg-white rounded-xl shadow-sm p-5 space-y-2 md:col-span-2">
+            <h3 className="text-base font-semibold">Potentially matching sources (plagiarism)</h3>
+            {plagResult.matches?.length ? (
+              <ul className="list-disc pl-6 text-sm break-all">
+                {plagResult.matches.slice(0, 10).map((s, i) => (
+                  <li key={(s.url || "src") + i}>
+                    <a className="underline" href={s.url} target="_blank" rel="noreferrer">
+                      {s.title || s.url}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-sm text-gray-600">No external matches found.</div>
+            )}
+          </section>
+        )}
 
-        <section className="bg-white rounded-xl shadow-sm p-5 md:col-span-2">
-          <h4 className="font-semibold border-b pb-2">AI E-E-A-T Verdict</h4>
-          {ca.aiAssessment ? (
-            <>
-              <div className="flex items-center justify-between mt-2">
+        {/* Show AI E-E-A-T verdict ONLY after user runs the card */}
+        {eeatResult && (
+          <section className="bg-white rounded-xl shadow-sm p-5 md:col-span-2">
+            <h4 className="font-semibold border-b pb-2">AI E-E-A-T Verdict</h4>
+            <div className="flex items-center justify-between mt-2">
+              <div className="text-sm">
+                Verdict: <b>{eeatResult.verdict.toUpperCase()}</b>
+              </div>
+              {eeatResult.scores ? (
                 <div className="text-sm">
-                  Verdict:{" "}
-                  <b
-                    className={
-                      ca.aiAssessment.verdict === "strong"
-                        ? "text-green-700"
-                        : ca.aiAssessment.verdict === "okay"
-                        ? "text-amber-700"
-                        : "text-red-700"
-                    }
-                  >
-                    {ca.aiAssessment.verdict.toUpperCase()}
+                  Score:{" "}
+                  <b>
+                    {Math.round(
+                      ((eeatResult.scores.experience +
+                        eeatResult.scores.expertise +
+                        eeatResult.scores.authoritativeness +
+                        eeatResult.scores.trust) /
+                        4) * 20
+                    )}
+                    /100
                   </b>
                 </div>
-                <div className="text-sm">
-                  Score: <b>{ca.aiAssessment.overall}/100</b>
-                </div>
-              </div>
+              ) : null}
+            </div>
 
-              {!!(ca.aiAssessment.reasons?.length || 0) && (
-                <ul className="list-disc pl-5 mt-3 text-sm text-gray-800">
-                  {ca.aiAssessment.reasons.map((r: string, i: number) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
-              )}
-
-              {/* Evidence expanders */}
-              <details className="mt-3">
-                <summary className="cursor-pointer text-sm font-medium">Evidence</summary>
-                <div className="mt-2 text-xs text-gray-700 space-y-2">
-                  {ca.aiAssessment.author?.evidence && (
-                    <div>
-                      <b>Author:</b> {ca.aiAssessment.author.evidence.join(" · ")}
-                    </div>
-                  )}
-                  {ca.aiAssessment.dates?.evidence && (
-                    <div>
-                      <b>Dates:</b> {ca.aiAssessment.dates.evidence.join(" · ")}
-                    </div>
-                  )}
-                  {ca.aiAssessment.organization?.evidence && (
-                    <div>
-                      <b>Organization:</b>{" "}
-                      {ca.aiAssessment.organization.evidence.join(" · ")}
-                    </div>
-                  )}
-                  {ca.aiAssessment.policies?.evidence && (
-                    <div>
-                      <b>Policies:</b> {ca.aiAssessment.policies.evidence.join(" · ")}
-                    </div>
-                  )}
-                  {!!(ca.aiAssessment.riskFlags?.length || 0) && (
-                    <div>
-                      <b>Risks:</b> {ca.aiAssessment.riskFlags!.join(", ")}
-                    </div>
-                  )}
-                </div>
-              </details>
-            </>
-          ) : (
-            <p className="text-sm text-gray-600 mt-2">
-              AI E-E-A-T is disabled or not available for this scan.
-            </p>
-          )}
-          {/* AI E-E-A-T Verdict */}
-        </section>
+            {eeatResult.recommendations?.length ? (
+              <ul className="list-disc pl-5 mt-3 text-sm text-gray-800">
+                {eeatResult.recommendations.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        )}
       </div>
     </div>
   );
