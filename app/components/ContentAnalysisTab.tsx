@@ -127,6 +127,16 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
           how?: string | null;
           why?: string | null;
         };
+        aiAssessment?: {
+          verdict: "strong" | "okay" | "weak";
+          overall: number; // 0..100
+          reasons: string[];
+          author?: { score?: number; evidence?: string[] };
+          dates?: { score?: number; evidence?: string[] };
+          organization?: { score?: number; evidence?: string[] };
+          policies?: { score?: number; evidence?: string[] };
+          riskFlags?: string[];
+        };
       }
     | undefined;
 
@@ -502,63 +512,79 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
             </div>
           )}
         </section>
+
         {/* AI E-E-A-T Verdict */}
-<section className="bg-white rounded-xl shadow-sm p-5">
-  <h4 className="font-semibold border-b pb-2">AI E-E-A-T Verdict</h4>
-  {data?.contentAnalysis?.aiAssessment ? (
-    <>
-      <div className="flex items-center justify-between mt-2">
-        <div className="text-sm">
-          Verdict:{" "}
-          <b className={
-            data.contentAnalysis.aiAssessment.verdict === "strong" ? "text-green-700" :
-            data.contentAnalysis.aiAssessment.verdict === "okay" ? "text-amber-700" : "text-red-700"
-          }>
-            {data.contentAnalysis.aiAssessment.verdict.toUpperCase()}
-          </b>
-        </div>
-        <div className="text-sm">
-          Score: <b>{data.contentAnalysis.aiAssessment.overall}/100</b>
-        </div>
-      </div>
+        <section className="bg-white rounded-xl shadow-sm p-5 md:col-span-2">
+          <h4 className="font-semibold border-b pb-2">AI E-E-A-T Verdict</h4>
+          {ca.aiAssessment ? (
+            <>
+              <div className="flex items-center justify-between mt-2">
+                <div className="text-sm">
+                  Verdict:{" "}
+                  <b
+                    className={
+                      ca.aiAssessment.verdict === "strong"
+                        ? "text-green-700"
+                        : ca.aiAssessment.verdict === "okay"
+                        ? "text-amber-700"
+                        : "text-red-700"
+                    }
+                  >
+                    {ca.aiAssessment.verdict.toUpperCase()}
+                  </b>
+                </div>
+                <div className="text-sm">
+                  Score: <b>{ca.aiAssessment.overall}/100</b>
+                </div>
+              </div>
 
-      {!!data.contentAnalysis.aiAssessment.reasons?.length && (
-        <ul className="list-disc pl-5 mt-3 text-sm text-gray-800">
-          {data.contentAnalysis.aiAssessment.reasons.map((r: string, i: number) => (
-            <li key={i}>{r}</li>
-          ))}
-        </ul>
-      )}
+              {!!(ca.aiAssessment.reasons?.length || 0) && (
+                <ul className="list-disc pl-5 mt-3 text-sm text-gray-800">
+                  {ca.aiAssessment.reasons.map((r: string, i: number) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              )}
 
-      {/* Evidence expanders */}
-      <details className="mt-3">
-        <summary className="cursor-pointer text-sm font-medium">Evidence</summary>
-        <div className="mt-2 text-xs text-gray-700 space-y-2">
-          {data.contentAnalysis.aiAssessment.author?.evidence && (
-            <div><b>Author:</b> {data.contentAnalysis.aiAssessment.author.evidence.join(" · ")}</div>
+              {/* Evidence expanders */}
+              <details className="mt-3">
+                <summary className="cursor-pointer text-sm font-medium">Evidence</summary>
+                <div className="mt-2 text-xs text-gray-700 space-y-2">
+                  {ca.aiAssessment.author?.evidence && (
+                    <div>
+                      <b>Author:</b> {ca.aiAssessment.author.evidence.join(" · ")}
+                    </div>
+                  )}
+                  {ca.aiAssessment.dates?.evidence && (
+                    <div>
+                      <b>Dates:</b> {ca.aiAssessment.dates.evidence.join(" · ")}
+                    </div>
+                  )}
+                  {ca.aiAssessment.organization?.evidence && (
+                    <div>
+                      <b>Organization:</b>{" "}
+                      {ca.aiAssessment.organization.evidence.join(" · ")}
+                    </div>
+                  )}
+                  {ca.aiAssessment.policies?.evidence && (
+                    <div>
+                      <b>Policies:</b> {ca.aiAssessment.policies.evidence.join(" · ")}
+                    </div>
+                  )}
+                  {!!(ca.aiAssessment.riskFlags?.length || 0) && (
+                    <div>
+                      <b>Risks:</b> {ca.aiAssessment.riskFlags!.join(", ")}
+                    </div>
+                  )}
+                </div>
+              </details>
+            </>
+          ) : (
+            <p className="text-sm text-gray-600 mt-2">
+              AI E-E-A-T is disabled or not available for this scan.
+            </p>
           )}
-          {data.contentAnalysis.aiAssessment.dates?.evidence && (
-            <div><b>Dates:</b> {data.contentAnalysis.aiAssessment.dates.evidence.join(" · ")}</div>
-          )}
-          {data.contentAnalysis.aiAssessment.organization?.evidence && (
-            <div><b>Organization:</b> {data.contentAnalysis.aiAssessment.organization.evidence.join(" · ")}</div>
-          )}
-          {data.contentAnalysis.aiAssessment.policies?.evidence && (
-            <div><b>Policies:</b> {data.contentAnalysis.aiAssessment.policies.evidence.join(" · ")}</div>
-          )}
-          {!!data.contentAnalysis.aiAssessment.riskFlags?.length && (
-            <div><b>Risks:</b> {data.contentAnalysis.aiAssessment.riskFlags.join(", ")}</div>
-          )}
-        </div>
-      </details>
-    </>
-  ) : (
-    <p className="text-sm text-gray-600 mt-2">
-      AI E-E-A-T is disabled or not available for this scan.
-    </p>
-  )}
-</section>
-
+        </section>
       </div>
     </div>
   );
