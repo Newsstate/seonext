@@ -87,9 +87,7 @@ export type ContentAnalysisResult = {
     who?: string | null; how?: string | null; why?: string | null;
   };
 
-  // NEW
-  aiAssessment?: AiEeatAssessment;
-  seoOptimization?: { score: number; notes: string[] };
+
 };
 
 export type SEOResult = {
