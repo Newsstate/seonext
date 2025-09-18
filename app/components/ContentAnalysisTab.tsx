@@ -502,6 +502,63 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
             </div>
           )}
         </section>
+        {/* AI E-E-A-T Verdict */}
+<section className="bg-white rounded-xl shadow-sm p-5">
+  <h4 className="font-semibold border-b pb-2">AI E-E-A-T Verdict</h4>
+  {data?.contentAnalysis?.aiAssessment ? (
+    <>
+      <div className="flex items-center justify-between mt-2">
+        <div className="text-sm">
+          Verdict:{" "}
+          <b className={
+            data.contentAnalysis.aiAssessment.verdict === "strong" ? "text-green-700" :
+            data.contentAnalysis.aiAssessment.verdict === "okay" ? "text-amber-700" : "text-red-700"
+          }>
+            {data.contentAnalysis.aiAssessment.verdict.toUpperCase()}
+          </b>
+        </div>
+        <div className="text-sm">
+          Score: <b>{data.contentAnalysis.aiAssessment.overall}/100</b>
+        </div>
+      </div>
+
+      {!!data.contentAnalysis.aiAssessment.reasons?.length && (
+        <ul className="list-disc pl-5 mt-3 text-sm text-gray-800">
+          {data.contentAnalysis.aiAssessment.reasons.map((r: string, i: number) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+      )}
+
+      {/* Evidence expanders */}
+      <details className="mt-3">
+        <summary className="cursor-pointer text-sm font-medium">Evidence</summary>
+        <div className="mt-2 text-xs text-gray-700 space-y-2">
+          {data.contentAnalysis.aiAssessment.author?.evidence && (
+            <div><b>Author:</b> {data.contentAnalysis.aiAssessment.author.evidence.join(" · ")}</div>
+          )}
+          {data.contentAnalysis.aiAssessment.dates?.evidence && (
+            <div><b>Dates:</b> {data.contentAnalysis.aiAssessment.dates.evidence.join(" · ")}</div>
+          )}
+          {data.contentAnalysis.aiAssessment.organization?.evidence && (
+            <div><b>Organization:</b> {data.contentAnalysis.aiAssessment.organization.evidence.join(" · ")}</div>
+          )}
+          {data.contentAnalysis.aiAssessment.policies?.evidence && (
+            <div><b>Policies:</b> {data.contentAnalysis.aiAssessment.policies.evidence.join(" · ")}</div>
+          )}
+          {!!data.contentAnalysis.aiAssessment.riskFlags?.length && (
+            <div><b>Risks:</b> {data.contentAnalysis.aiAssessment.riskFlags.join(", ")}</div>
+          )}
+        </div>
+      </details>
+    </>
+  ) : (
+    <p className="text-sm text-gray-600 mt-2">
+      AI E-E-A-T is disabled or not available for this scan.
+    </p>
+  )}
+</section>
+
       </div>
     </div>
   );
