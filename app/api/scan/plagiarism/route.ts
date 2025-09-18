@@ -1,55 +1,73 @@
+// app/api/scan/plagiarism/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
+/** Result item for a potential match */
 type Match = {
   url: string;
   title?: string;
-  similarity?: number;
+  similarity?: number; // 0..1
   snippet?: string;
 };
-// Optional: If you want web search, add an external search provider here (Bing, SerpAPI, etc).
-// Keep it stubbed/off by default to avoid background work during normal scans.
 
-async function extractMainText(html: string) {
-  // ultra-lightweight text extraction (you can swap in Readability/cheerio from your stack)
+function stripTags(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-// Example local “similar passage” finder (naive shingling) — you can replace with search API.
-function makeShingles(text: string, size = 12) {
-  const words = text.split(/\s+/).filter(Boolean);
-  const shingles = new Set<string>();
-  for (let i = 0; i < words.length - size; i++) shingles.add(words.slice(i, i + size).join(' ').toLowerCase());
-  return shingles;
+async function extractMainText(html: string): Promise<string> {
+  // lightweight local extraction; swap with Readability if you already use cheerio elsewhere
+  return stripTags(html);
 }
 
-export const runtime = 'nodejs';
-export const maxDuration = 60;
+function makeShingles(text: string, size = 12): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const out: string[] = [];
+  for (let i = 0; i + size <= words.length; i++) {
+    out.push(words.slice(i, i + size).join(' ').toLowerCase());
+  }
+  return out;
+}
 
-export async function POST(req: NextRequest) {
+export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const { url } = await req.json();
-    if (!url) return NextResponse.json({ error: 'URL missing' }, { status: 400 });
+    if (!url || typeof url !== 'string') {
+      return NextResponse.json({ error: 'URL missing' }, { status: 400 });
+    }
 
     const r = await fetch(url, { redirect: 'follow' });
     const html = await r.text();
     const text = await extractMainText(html);
-    if (!text) return NextResponse.json({ overlap: 0, matches: [] });
+    if (!text) {
+      const matches: Match[] = [];
+      return NextResponse.json({ overlap: 0, matches });
+    }
 
-    // Naive baseline: compute overlap against the page itself (used for internal dup paragraphs)
-    // Real web matches: integrate a search API using random shingles as queries.
+    // Naive baseline overlap heuristic; replace with real web-search matching if you add a key
     const shingles = makeShingles(text);
-    const overlap = Math.min(0.98, Math.max(0, shingles.size > 0 ? 0.15 + (text.length > 6000 ? 0.1 : 0) : 0)); // placeholder heuristic
+    const overlap =
+      shingles.length > 0
+        ? Math.min(0.98, 0.15 + (text.length > 6000 ? 0.1 : 0))
+        : 0;
 
-    // Placeholder “matches” payload to show UI; replace with real search results if you wire an API.
-    const matches = []; // e.g., [{ url, title, similarity: 0.64, snippet }]
+    // Placeholder result list; populate via Bing/SerpAPI when available
+    const matches: Match[] = [];
 
-return NextResponse.json<{ overlap: number; matches: Match[] }>({ overlap, matches });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || 'Plagiarism check failed' }, { status: 500 });
+    // Typed payload avoids implicit-any warnings
+    return NextResponse.json<{ overlap: number; matches: Match[] }>({
+      overlap,
+      matches,
+    });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Plagiarism check failed';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-
