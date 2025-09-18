@@ -188,8 +188,24 @@ export default function ContentAnalysisTab({ data }: { data: SEOResult }) {
       {/* On-demand buttons */}
       <section className="space-y-4">
         <h3 className="text-base font-semibold">On-Demand Checks</h3>
-        <PlagiarismCard url={pageUrl} onDone={handlePlagDone} />
-        <EEATCard url={pageUrl} onDone={handleEEATDone} />
+      <PlagiarismCard
+  url={pageUrl}
+  onReveal={() =>
+    document
+      .querySelector<HTMLElement>('[data-section="plagiarism"]')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+/>
+
+<EEATCard
+  url={pageUrl}
+  onReveal={() =>
+    document
+      .querySelector<HTMLElement>('[data-section="eeat"]')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+/>
+
       </section>
 
       {/* Static E-E-A-T hints (safe to compute during normal scan) */}
