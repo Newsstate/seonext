@@ -18,15 +18,13 @@ import CrawlHintsCard from "./CrawlHintsCard";
 import TouchpointsCard from "./TouchpointsCard";
 import OverviewFindings from "./OverviewFindings";
 import ContentAnalysisTab from "@/components/ContentAnalysisTab";
-import DiscoverCard from './components/cards/DiscoverCard';
+import DiscoverCard from "./components/cards/DiscoverCard";
 
 export default function Page() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">SEO Dashboard</h1>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* your existing cards… */}
         <Suspense fallback={<div className="rounded-2xl border p-5">Loading…</div>}>
           <DiscoverCard />
         </Suspense>
@@ -34,7 +32,6 @@ export default function Page() {
     </div>
   );
 }
-
 type Details = {
   imagesMissingAlt?: string[];
   imagesNoLazy?: string[];
