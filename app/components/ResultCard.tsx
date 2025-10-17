@@ -27,6 +27,31 @@ type Details = {
   linksAll?: string[];
 };
 
+type DiscoverFinding = {
+  id: string;
+  title: string;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  detail: string;
+  recommendation?: string;
+  evidence?: any;
+};
+
+type DiscoverReport = {
+  url: string;
+  overallScore: number; // 0-100
+  chance: "Low" | "Medium" | "High";
+  pillars: Record<string, number>;
+  findings: DiscoverFinding[];
+  aiSuggestions?: {
+    improvedTitle?: string[];
+    improvedIntro?: string[];
+    imageBriefs?: string[];
+    schemaPatch?: Record<string, any>;
+    checklist?: string[];
+  };
+  meta?: Record<string, any>;
+};
+
 export default function ResultCard({ data }: { data: any }) {
   const tabs = [
     { key: "overview", label: "Overview" },
@@ -37,6 +62,7 @@ export default function ResultCard({ data }: { data: any }) {
     { key: "technical", label: "Technical" },
     { key: "indexing", label: "Indexing" },
     { key: "performance", label: "Performance" },
+    { key: "discover", label: "Discover" },               // 👈 NEW TAB
   ] as const;
 
   type TabKey = typeof tabs[number]["key"];
@@ -46,9 +72,32 @@ export default function ResultCard({ data }: { data: any }) {
   const Links = data.links || {};
   const og = data.og || {};
   const tw = data.twitter || {};
-  // If you need later:
-  // const warnings: string[] = data?._warnings ?? [];
-  // const details: Details = (data?.details ?? {}) as Details;
+
+  const [discoverLoading, setDiscoverLoading] = useState(false);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
+  const [discover, setDiscover] = useState<DiscoverReport | null>(null);
+
+  async function runDiscover() {
+    setDiscoverLoading(true);
+    setDiscoverError(null);
+    try {
+      const body: any = { url: pageUrl, useAI: true };
+      if (data.rawHTML) body.pageHTML = data.rawHTML; // reuse fetched HTML if available
+
+      const res = await fetch("/api/discover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Discover check failed");
+      setDiscover(j);
+    } catch (e: any) {
+      setDiscoverError(e.message || "Failed to run Discover");
+    } finally {
+      setDiscoverLoading(false);
+    }
+  }
 
   const getStatusColor = (status: number | undefined) => {
     if (!status) return "bg-gray-100 text-gray-600";
@@ -180,7 +229,6 @@ export default function ResultCard({ data }: { data: any }) {
             </div>
           </section>
 
-
           <HeadersCard url={pageUrl} />
           <ImageAuditCard url={pageUrl} />
           <AmpCard url={pageUrl} />
@@ -201,6 +249,116 @@ export default function ResultCard({ data }: { data: any }) {
         </>
       ) : active === "performance" ? (
         <PsiCard url={pageUrl} />
+      ) : active === "discover" ? (
+        <section className="bg-white rounded-xl shadow-sm p-5 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Discover Readiness</h3>
+              <p className="text-sm text-gray-600 break-all">{pageUrl}</p>
+            </div>
+            <button
+              onClick={runDiscover}
+              disabled={discoverLoading}
+              className="rounded-lg bg-black text-white px-4 py-2 disabled:opacity-50"
+            >
+              {discoverLoading ? "Scanning…" : (discover ? "Re-run" : "Run Discover Check")}
+            </button>
+          </div>
+
+          {discoverError && (
+            <div className="text-sm text-red-600">{discoverError}</div>
+          )}
+
+          {discover && (
+            <div className="space-y-4">
+              <div className="flex items-end justify-between">
+                <div className="text-3xl font-bold">{discover.overallScore}</div>
+                <div className="text-xs uppercase tracking-wide text-gray-500">
+                  {discover.chance}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {Object.entries(discover.pillars).map(([k, v]) => (
+                  <div key={k} className="rounded-xl border p-3">
+                    <div className="text-xs uppercase text-gray-500">{k}</div>
+                    <div className="text-xl font-semibold">{v}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <h4 className="font-semibold mb-2">Findings</h4>
+                {discover.findings?.length ? (
+                  <ul className="space-y-2">
+                    {discover.findings.map((f) => (
+                      <li key={f.id} className="rounded-lg border p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{f.title}</span>
+                          <span className="text-xs px-2 py-1 rounded-full border">{f.severity}</span>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">{f.detail}</p>
+                        {f.recommendation && (
+                          <p className="text-sm mt-1">
+                            <span className="font-medium">Fix:</span> {f.recommendation}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="text-sm text-gray-600">No issues detected.</div>
+                )}
+              </div>
+
+              {discover.aiSuggestions && (
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="rounded-xl border p-4">
+                    <h4 className="font-semibold mb-1">AI Title Ideas</h4>
+                    <ul className="list-disc pl-5 text-sm space-y-1">
+                      {discover.aiSuggestions.improvedTitle?.map((t, i) => (
+                        <li key={i}>{t}</li>
+                      ))}
+                    </ul>
+                    <h4 className="font-semibold mt-4 mb-1">AI Intros</h4>
+                    <ul className="list-disc pl-5 text-sm space-y-1">
+                      {discover.aiSuggestions.improvedIntro?.map((t, i) => (
+                        <li key={i}>{t}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="rounded-xl border p-4">
+                    <h4 className="font-semibold mb-1">Lead Image Briefs</h4>
+                    <ul className="list-disc pl-5 text-sm space-y-1">
+                      {discover.aiSuggestions.imageBriefs?.map((t, i) => (
+                        <li key={i}>{t}</li>
+                      ))}
+                    </ul>
+                    {discover.aiSuggestions.schemaPatch && (
+                      <>
+                        <h4 className="font-semibold mt-4 mb-1">JSON-LD Patch</h4>
+                        <pre className="text-xs whitespace-pre-wrap bg-gray-50 p-2 rounded-lg border">
+                          {JSON.stringify(discover.aiSuggestions.schemaPatch, null, 2)}
+                        </pre>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {discover.aiSuggestions?.checklist && (
+                <div className="rounded-xl border p-4">
+                  <h4 className="font-semibold mb-1">High-Impact Checklist</h4>
+                  <ul className="list-disc pl-5 text-sm space-y-1">
+                    {discover.aiSuggestions.checklist.map((t, i) => (
+                      <li key={i}>{t}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
       ) : (
         // OVERVIEW (default)
         <>
